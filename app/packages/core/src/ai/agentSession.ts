@@ -99,7 +99,9 @@ export function createAgentSession(config: {
             if (done) return;
             done = true;
             clearTimeout(timer);
-            resolve();
+            const errorMessage = agent.state?.errorMessage?.trim();
+            if (errorMessage) reject(new Error(errorMessage));
+            else resolve();
           },
           (err) => {
             if (done) return;

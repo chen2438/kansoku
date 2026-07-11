@@ -19,6 +19,7 @@
     "package": "tsdown && pnpm rebuild-native && pnpm build:native && electron-builder --mac dmg zip --arm64"
   },
   "dependencies": {
+    "@earendil-works/pi-ai": "^0.80.6",
     "@hono/node-server": "1.19.14",
     "better-sqlite3": "^12.11.1",
     "electron-ipc-decorator": "^1.0.1",

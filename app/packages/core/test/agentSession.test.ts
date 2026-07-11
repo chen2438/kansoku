@@ -109,6 +109,25 @@ describe("createAgentSession", () => {
     expect(session.isDone()).toBe(true);
   });
 
+  it("rejects when the agent resolves with a provider error in state", async () => {
+    const agentFactory: AiAgentFactory = () => ({
+      prompt: async () => {},
+      abort: () => {},
+      state: { messages: [], errorMessage: "provider authentication failed" },
+    });
+    const session = createAgentSession({
+      layer: "analyst",
+      symbol: "LABUSDT",
+      model: fakeModel,
+      systemPrompt: "system prompt",
+      tools: [],
+      agentFactory,
+    });
+
+    await expect(session.runTurn("analyze", 1000)).rejects.toThrow("provider authentication failed");
+    expect(session.isDone()).toBe(true);
+  });
+
   it("rejects with AgentTimeoutError, aborts the agent, and sets isDone on timeout", async () => {
     let aborted = false;
     const agentFactory: AiAgentFactory = () => ({

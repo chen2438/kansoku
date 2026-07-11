@@ -89,4 +89,5 @@ pnpm typecheck
 - 恢复 AI derivatives DataPack、24x7 scheduler、前端验证和合约行情面板。
 - 修复混合盘面复盘错误地统一使用 Longbridge provider，导致 Binance 合约缺少涨跌和无法判定的问题。
 - 修复带 `analysis` 查询参数的标的页面把查询串拼入 symbol，导致手动重新分析失败的问题。
+- 修复 Electron 打包 `pi-ai` 后 OAuth 动态模块路径失效，导致 Codex 分析零调用退出的问题；同时透传底层 Agent provider 错误。
 - 安装 Node 22，以满足上游 pnpm 11 要求。
