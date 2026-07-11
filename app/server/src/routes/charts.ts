@@ -60,8 +60,9 @@ export const chartsRoute: FastifyPluginAsync = async (app) => {
     if (doc.type !== "intraday") {
       throw new ClientError(`history view only supports intraday charts, got: ${doc.type}`, undefined, 400);
     }
-    const count = clampViewCount(req.query.count);
-    if (count === null) throw new ClientError("`count` must be a positive integer", "e.g. ?count=300", 400);
+    const requestedCount = clampViewCount(req.query.count);
+    if (requestedCount === null) throw new ClientError("`count` must be a positive integer", "e.g. ?count=300", 400);
+    const count = Math.min(requestedCount, 1000);
     const body = refreshBody(doc.type, doc.input);
     if (!body) throw new ClientError("chart has no symbol to refetch", undefined, 400);
     const result = await buildChart({ ...body, count, title: doc.title });

@@ -1,12 +1,19 @@
 import { ClientError } from "../../errors.js";
 import { longbridgeProvider } from "./longbridge.js";
+import { binanceProvider } from "./binance.js";
 import type { MarketDataProvider } from "./types.js";
 
 const providers: Record<string, MarketDataProvider> = {
   longbridge: longbridgeProvider,
+  "binance-usdm": binanceProvider,
 };
 
-export function getProvider(): MarketDataProvider {
+export function isBinanceSymbol(symbol: string): boolean {
+  return !symbol.includes(".") && /^[A-Z0-9]+USDT$/i.test(symbol);
+}
+
+export function getProvider(symbol?: string): MarketDataProvider {
+  if (symbol && isBinanceSymbol(symbol)) return binanceProvider;
   const name = process.env.MARKET_PROVIDER || "longbridge";
   const provider = providers[name];
   if (!provider) {

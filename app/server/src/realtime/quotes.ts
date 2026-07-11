@@ -7,6 +7,7 @@ import { classifySession } from "../services/session.js";
 export type { RawQuote } from "../services/marketdata/types.js";
 
 const EXTENDED_FRESH_MS = 15 * 60_000;
+const isBinanceSymbol = (symbol: string): boolean => !symbol.includes(".") && /^[A-Z0-9]+USDT$/i.test(symbol);
 
 const SESSION_LABEL: Record<string, string> = {
   pre: "盘前",
@@ -17,6 +18,9 @@ const SESSION_LABEL: Record<string, string> = {
 export function normalizeQuote(q: RawQuote, nowMs: number): QuoteCell {
   const regularLast = Number(q.last);
   const regularPct = Number(q.change_percentage);
+  if (isBinanceSymbol(q.symbol)) {
+    return { symbol: q.symbol, session: "24h", last: regularLast, pct: regularPct, regularLast, regularPct };
+  }
   const clock = classifySession(Math.floor(nowMs / 1000));
   if (clock === "regular") {
     return { symbol: q.symbol, session: "日盘", last: regularLast, pct: regularPct, regularLast, regularPct };
@@ -88,6 +92,8 @@ let baseRefreshTimer: ReturnType<typeof setInterval> | null = null;
 let baseRetained = false;
 let degraded = false;
 let lastEnvelope: string | null = null;
+const binanceQuotes = new Map<string, QuoteCell>();
+let binanceTimer: ReturnType<typeof setInterval> | null = null;
 
 function emit(env: string): void {
   for (const l of listeners) l(env);
@@ -106,10 +112,27 @@ function buildSnapshot(): QuoteSnapshot {
   for (const s of extras.keys()) {
     if (seen.has(s)) continue;
     seen.add(s);
-    const cell = stream.getSnapshot(s);
+    const cell = isBinanceSymbol(s) ? binanceQuotes.get(s) : stream.getSnapshot(s);
     if (cell) quotes.push(cell);
   }
   return { ts: Date.now(), quotes };
+}
+
+async function refreshBinanceQuotes(): Promise<void> {
+  const symbols = [...extras.keys()].filter(isBinanceSymbol);
+  if (!symbols.length) return;
+  const rows = await Promise.all(symbols.map(async (symbol) => {
+    const [quote] = await getProvider(symbol).getQuotes([symbol]);
+    return quote ? normalizeQuote(quote, Date.now()) : null;
+  }));
+  for (const row of rows) if (row) binanceQuotes.set(row.symbol, row);
+  flushCoalesced();
+}
+
+function ensureBinancePolling(): void {
+  if (![...extras.keys()].some(isBinanceSymbol)) return;
+  void refreshBinanceQuotes().catch(() => {});
+  if (!binanceTimer) binanceTimer = setInterval(() => void refreshBinanceQuotes().catch(() => {}), 5_000);
 }
 
 function flushCoalesced(): void {
@@ -169,6 +192,11 @@ function stopIfIdle(): void {
     listenerHandle = null;
   }
   lastEnvelope = null;
+  if (binanceTimer) {
+    clearInterval(binanceTimer);
+    binanceTimer = null;
+  }
+  binanceQuotes.clear();
   if (baseRetained && baseSymbols.length) {
     void getLongbridgeStream().release(baseSymbols).catch(() => {});
     baseRetained = false;
@@ -209,11 +237,13 @@ export function subscribeQuotes(push: (envelope: string) => void, extraSymbols: 
   ensureListener();
   startBaseRefreshTimer();
 
-  if (fresh.length) {
+  const longbridgeFresh = fresh.filter((s) => !isBinanceSymbol(s));
+  if (longbridgeFresh.length) {
     void getLongbridgeStream()
-      .retain(fresh)
+      .retain(longbridgeFresh)
       .catch((err) => console.warn("[longbridge-stream] retain extras failed", err));
   }
+  ensureBinancePolling();
   void ensureBase().then(() => {
     if (lastEnvelope) push(lastEnvelope);
     else scheduleFlush(cleaned[0] ?? baseSymbols[0] ?? "");
@@ -224,7 +254,13 @@ export function subscribeQuotes(push: (envelope: string) => void, extraSymbols: 
   return () => {
     listeners.delete(push);
     const drop = removeExtras(cleaned);
-    if (drop.length) void getLongbridgeStream().release(drop).catch(() => {});
+    const longbridgeDrop = drop.filter((s) => !isBinanceSymbol(s));
+    if (longbridgeDrop.length) void getLongbridgeStream().release(longbridgeDrop).catch(() => {});
+    for (const symbol of drop.filter(isBinanceSymbol)) binanceQuotes.delete(symbol);
+    if (binanceTimer && ![...extras.keys()].some(isBinanceSymbol)) {
+      clearInterval(binanceTimer);
+      binanceTimer = null;
+    }
     stopIfIdle();
   };
 }

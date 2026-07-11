@@ -13,7 +13,7 @@ import { getResolvedOutcomes, saveResolvedOutcome } from "../services/cockpit/ou
 import { buildCockpitPosition } from "../services/cockpit/position.js";
 import { entryPlanFromDoc, latestIntradayDoc } from "../services/cockpit/entryPlan.js";
 import { computeRelativeVolume } from "../services/relvol.js";
-import { getProvider } from "../services/marketdata/registry.js";
+import { getProvider, isBinanceSymbol } from "../services/marketdata/registry.js";
 import type { RawPosition } from "../services/marketdata/types.js";
 import { classifySession, easternDate } from "../services/session.js";
 import { listCommentDates, listComments } from "../ai/comments.js";
@@ -23,6 +23,7 @@ import { aiConfig } from "../ai/models.js";
 import { predictionStale } from "../services/staleness.js";
 import { listCharts, loadChart } from "../services/store.js";
 import { normalizeQuote } from "../realtime/quotes.js";
+import { getBinanceInstrument } from "../services/marketdata/binance.js";
 
 const SYMBOL_RE = /^[A-Z0-9.]+$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -41,6 +42,7 @@ function noteFileName(raw: string): string {
 
 export function normalizeSymbol(raw: string): string {
   let sym = raw.trim().toUpperCase();
+  if (isBinanceSymbol(sym)) return sym;
   if (!sym.includes(".")) sym += ".US";
   if (!SYMBOL_RE.test(sym)) {
     throw new ClientError(`invalid symbol: ${raw}`, "e.g. MU or MU.US");
@@ -50,10 +52,53 @@ export function normalizeSymbol(raw: string): string {
 
 type Params = { sym: string };
 
+export interface SymbolValidation {
+  symbol: string;
+  provider: "longbridge" | "binance-usdm";
+  source: string;
+  marketType: string;
+  contractType?: string;
+  underlyingType?: string;
+}
+
 export const symbolsRoute: FastifyPluginAsync = async (app) => {
+  app.get<{ Params: Params }>("/:sym/validate", async (req) => {
+    const sym = normalizeSymbol(req.params.sym);
+    if (isBinanceSymbol(sym)) {
+      const info = await getBinanceInstrument(sym);
+      if (info.status !== "TRADING") {
+        throw new ClientError(`${sym} is not currently trading`, `Binance contract status: ${info.status}`, 404);
+      }
+      return {
+        ok: true,
+        data: {
+          symbol: sym,
+          provider: "binance-usdm",
+          source: "Binance USD-M Futures",
+          marketType: info.contractType === "TRADIFI_PERPETUAL" ? "TradFi 永续合约" : "加密永续合约",
+          contractType: info.contractType,
+          underlyingType: info.underlyingType,
+        } satisfies SymbolValidation,
+      };
+    }
+
+    try {
+      const quotes = await getProvider(sym).getQuotes([sym]);
+      if (!quotes.length || !Number.isFinite(Number(quotes[0].last))) throw new Error("empty quote");
+    } catch {
+      throw new ClientError(`未找到标的 ${sym}`, "请检查代码，或确认 Longbridge 当前支持该市场。", 404);
+    }
+    const suffix = sym.split(".").at(-1) ?? "";
+    const marketType = suffix === "US" ? "美股" : suffix === "HK" ? "港股" : suffix === "SH" || suffix === "SZ" ? "A 股" : "证券";
+    return {
+      ok: true,
+      data: { symbol: sym, provider: "longbridge", source: "Longbridge", marketType } satisfies SymbolValidation,
+    };
+  });
+
   app.get<{ Params: Params }>("/:sym/flow", async (req) => {
     const sym = normalizeSymbol(req.params.sym);
-    const provider = getProvider();
+    const provider = getProvider(sym);
     if (!provider.getFlow) return { ok: true, data: null };
     const [flowRes, distRes] = await Promise.allSettled([
       provider.getFlow(sym),
@@ -66,16 +111,17 @@ export const symbolsRoute: FastifyPluginAsync = async (app) => {
 
   app.get<{ Params: Params }>("/:sym/benchmark", async (req) => {
     const sym = normalizeSymbol(req.params.sym);
-    const symbols = [sym, ...BENCHMARK_SYMBOLS.filter((s) => s !== sym)];
-    const barsList = await Promise.all(symbols.map((s) => getProvider().getKline(s, "5m", 100)));
-    const regularBars = barsList.map((bars) => bars.filter((b) => classifySession(toTs(b.time)) === "regular"));
+    const benchmarkSymbols = isBinanceSymbol(sym) ? ["BTCUSDT", "ETHUSDT"] : BENCHMARK_SYMBOLS;
+    const symbols = [sym, ...benchmarkSymbols.filter((s) => s !== sym)];
+    const barsList = await Promise.all(symbols.map((s) => getProvider(s).getKline(s, "5m", 100)));
+    const regularBars = isBinanceSymbol(sym) ? barsList : barsList.map((bars) => bars.filter((b) => classifySession(toTs(b.time)) === "regular"));
     const data = buildBenchmark(symbols.map((s, i) => ({ symbol: s, bars: regularBars[i] })));
     return { ok: true, data };
   });
 
   app.get<{ Params: Params }>("/:sym/position", async (req) => {
     const sym = normalizeSymbol(req.params.sym);
-    const provider = getProvider();
+    const provider = getProvider(sym);
     const [positions, quotes] = await Promise.all([
       provider.getPositions?.() ?? Promise.resolve([] as RawPosition[]),
       provider.getQuotes([sym]),
@@ -97,7 +143,7 @@ export const symbolsRoute: FastifyPluginAsync = async (app) => {
     let bars: RawBar[] | null = null;
     if (metas.some((m) => !cached.has(m.id))) {
       try {
-        bars = await getProvider().getKline(sym, "15m", 300);
+        bars = await getProvider(sym).getKline(sym, "15m", 300);
       } catch {
         bars = null;
       }
@@ -125,7 +171,7 @@ export const symbolsRoute: FastifyPluginAsync = async (app) => {
 
   app.get<{ Params: Params }>("/:sym/relvol", async (req) => {
     const sym = normalizeSymbol(req.params.sym);
-    const bars = await getProvider().getKline(sym, "15m", 500);
+    const bars = await getProvider(sym).getKline(sym, "15m", 500);
     return { ok: true, data: computeRelativeVolume(bars) };
   });
 
@@ -187,6 +233,15 @@ export const symbolsRoute: FastifyPluginAsync = async (app) => {
     const result = runAnalyst({ symbol: sym, origin: "manual", deps: { model } });
     void result.done?.catch(() => {});
     return { ok: true, data: { started: result.started, ...(result.reason ? { reason: result.reason } : {}) } };
+  });
+
+  app.get<{ Params: Params }>("/:sym/derivatives", async (req) => {
+    const sym = normalizeSymbol(req.params.sym);
+    const provider = getProvider(sym);
+    if (!provider.getDerivativesSnapshot) {
+      throw new ClientError(`${sym} is not a derivatives symbol`, "Use a Binance USD-M symbol such as BTCUSDT or NVDAUSDT.", 400);
+    }
+    return { ok: true, data: await provider.getDerivativesSnapshot(sym) };
   });
 
   app.get<{ Params: Params }>("/:sym/note", async (req) => {

@@ -59,6 +59,50 @@ export interface RawPortfolio {
 
 export type Capability = "flow" | "capital-distribution" | "positions" | "watchlist" | "portfolio";
 
+export interface BinanceInstrument {
+  symbol: string;
+  contractType: string;
+  status: string;
+  marginAsset: string;
+  quoteAsset: string;
+  underlyingType: string;
+  underlyingSubType: string[];
+}
+
+export interface BinanceDerivativesSnapshot {
+  instrument: BinanceInstrument;
+  mark: {
+    markPrice: number;
+    indexPrice: number;
+    lastFundingRate: number;
+    nextFundingTime: string;
+  } | null;
+  openInterest: { contracts: number; notional: number | null; time: string } | null;
+  fundingHistory: { rate: number; time: string }[];
+  openInterestHistory: { contracts: number; value: number; time: string }[];
+  sentiment: {
+    globalAccounts: { longShortRatio: number; longAccount: number; shortAccount: number } | null;
+    topAccounts: { longShortRatio: number; longAccount: number; shortAccount: number } | null;
+    topPositions: { longShortRatio: number; longAccount: number; shortAccount: number } | null;
+    taker: { buySellRatio: number; buyVolume: number; sellVolume: number } | null;
+  };
+  depth: {
+    lastUpdateId: number;
+    bids: [number, number][];
+    asks: [number, number][];
+  } | null;
+  recentTrades: { price: number; quantity: number; buyerMaker: boolean; time: string }[];
+  liquidations: {
+    side: string;
+    price: number;
+    averagePrice: number;
+    quantity: number;
+    status: string;
+    time: string;
+  }[];
+  liquidationCoverageStartedAt: string | null;
+}
+
 export interface MarketDataProvider {
   readonly name: string;
   readonly capabilities: ReadonlySet<Capability>;
@@ -70,4 +114,5 @@ export interface MarketDataProvider {
   getPositions?(): Promise<RawPosition[]>;
   getPortfolio?(): Promise<RawPortfolio>;
   getWatchlistSymbols?(): Promise<string[]>;
+  getDerivativesSnapshot?(symbol: string): Promise<BinanceDerivativesSnapshot>;
 }

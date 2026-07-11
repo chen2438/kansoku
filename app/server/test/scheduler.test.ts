@@ -84,8 +84,18 @@ describe("aiScheduler tick", () => {
     const discoverTargets = vi.fn(async () => ["MU.US"]);
     const { deps, rec } = harness({ sessionKind: () => "overnight", discoverTargets });
     await createAiScheduler(deps).tick();
-    expect(discoverTargets).not.toHaveBeenCalled();
+    expect(discoverTargets).toHaveBeenCalledOnce();
     expect(rec.commentatorCalls).toHaveLength(0);
+  });
+
+  it("monitors Binance perpetual targets overnight", async () => {
+    const { deps, rec } = harness({
+      sessionKind: () => "overnight",
+      discoverTargets: async () => ["MU.US", "BTCUSDT"],
+      shouldHeartbeat: () => true,
+    });
+    await createAiScheduler(deps).tick();
+    expect(rec.commentatorCalls.map((call) => call.symbol)).toEqual(["BTCUSDT"]);
   });
 
   it("does nothing when the comment model is unresolved", async () => {

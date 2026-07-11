@@ -19,8 +19,16 @@ const store = vi.hoisted(() => ({
   loadChart: vi.fn(),
 }));
 
-vi.mock("../src/services/marketdata/registry.js", () => ({ getProvider: () => provider }));
+const binance = vi.hoisted(() => ({
+  getBinanceInstrument: vi.fn(),
+}));
+
+vi.mock("../src/services/marketdata/registry.js", () => ({
+  getProvider: () => provider,
+  isBinanceSymbol: (symbol: string) => !symbol.includes(".") && /^[A-Z0-9]+USDT$/i.test(symbol),
+}));
 vi.mock("../src/services/store.js", () => store);
+vi.mock("../src/services/marketdata/binance.js", () => binance);
 vi.mock("../src/services/cockpit/outcomeCache.js", () => ({
   getResolvedOutcomes: async () => new Map(),
   saveResolvedOutcome: async () => {},
@@ -73,8 +81,47 @@ beforeEach(() => {
   provider.getKline.mockReset();
   provider.getPositions.mockReset();
   provider.getQuotes.mockReset();
+  binance.getBinanceInstrument.mockReset();
   store.listCharts.mockReset();
   store.loadChart.mockReset();
+});
+
+describe("GET /:sym/validate", () => {
+  it("validates a Longbridge symbol and returns its source", async () => {
+    provider.getQuotes.mockResolvedValue([{ symbol: "MU.US", last: "120", prev_close: "118", change_percentage: "1.7" }]);
+    const app = await testApp();
+    const res = await app.inject("/mu/validate");
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data).toEqual({ symbol: "MU.US", provider: "longbridge", source: "Longbridge", marketType: "美股" });
+  });
+
+  it("rejects a symbol Longbridge cannot quote", async () => {
+    provider.getQuotes.mockRejectedValue(new Error("unknown symbol"));
+    const app = await testApp();
+    const res = await app.inject("/NOTREAL/validate");
+    expect(res.statusCode).toBe(404);
+    expect(res.json().error).toContain("未找到标的 NOTREAL.US");
+  });
+
+  it("returns Binance contract source and classification", async () => {
+    binance.getBinanceInstrument.mockResolvedValue({
+      symbol: "NVDAUSDT",
+      status: "TRADING",
+      contractType: "TRADIFI_PERPETUAL",
+      underlyingType: "EQUITY",
+    });
+    const app = await testApp();
+    const res = await app.inject("/nvdausdt/validate");
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data).toEqual({
+      symbol: "NVDAUSDT",
+      provider: "binance-usdm",
+      source: "Binance USD-M Futures",
+      marketType: "TradFi 永续合约",
+      contractType: "TRADIFI_PERPETUAL",
+      underlyingType: "EQUITY",
+    });
+  });
 });
 
 describe("symbol normalization", () => {
@@ -91,6 +138,13 @@ describe("symbol normalization", () => {
     const app = await testApp();
     const res = await app.inject("/m%20u!/flow");
     expect(res.statusCode).toBe(400);
+  });
+
+  it("keeps a Binance USD-M symbol unchanged", async () => {
+    provider.getFlow.mockResolvedValue([]);
+    const app = await testApp();
+    await app.inject("/btcusdt/flow");
+    expect(provider.getFlow).toHaveBeenCalledWith("BTCUSDT");
   });
 });
 

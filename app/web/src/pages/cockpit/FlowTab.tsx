@@ -8,6 +8,63 @@ import { useIntervalFetch } from "./useIntervalFetch";
 
 const BUCKET_LABEL: Record<string, string> = { large: "大单", medium: "中单", small: "小单" };
 
+interface DerivativesSnapshot {
+  instrument: { contractType: string; underlyingType: string; marginAsset: string };
+  mark: { markPrice: number; indexPrice: number; lastFundingRate: number; nextFundingTime: string } | null;
+  openInterest: { contracts: number; notional: number | null } | null;
+  sentiment: {
+    globalAccounts: { longShortRatio: number; longAccount: number; shortAccount: number } | null;
+    topAccounts: { longShortRatio: number; longAccount: number; shortAccount: number } | null;
+    topPositions: { longShortRatio: number; longAccount: number; shortAccount: number } | null;
+    taker: { buySellRatio: number; buyVolume: number; sellVolume: number } | null;
+  };
+  depth: { bids: [number, number][]; asks: [number, number][] } | null;
+  fundingHistory: { rate: number; time: string }[];
+  openInterestHistory: { contracts: number; value: number; time: string }[];
+  recentTrades: unknown[];
+  liquidations: unknown[];
+  liquidationCoverageStartedAt: string | null;
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return <><div className="k">{label}</div><div className="v num">{value}</div></>;
+}
+
+function DerivativesFlowTab({ symbol }: { symbol: string }) {
+  const { data, error } = useIntervalFetch<DerivativesSnapshot>(`/api/symbols/${encodeURIComponent(symbol)}/derivatives`, 15_000);
+  if (error) return <div className="note-block">合约行情获取失败：{error}</div>;
+  if (!data) return <div className="note-block">加载中…</div>;
+  const funding = data.mark ? `${(data.mark.lastFundingRate * 100).toFixed(4)}%` : "--";
+  const premium = data.mark && data.mark.indexPrice ? ((data.mark.markPrice / data.mark.indexPrice - 1) * 100).toFixed(4) + "%" : "--";
+  const bid = data.depth?.bids[0];
+  const ask = data.depth?.asks[0];
+  return <>
+    <SectionTitle>永续合约结构</SectionTitle>
+    <div className="grid2">
+      <Metric label="类型" value={`${data.instrument.contractType} · ${data.instrument.underlyingType}`} />
+      <Metric label="保证金" value={data.instrument.marginAsset} />
+      <Metric label="标记价" value={data.mark?.markPrice.toLocaleString() ?? "--"} />
+      <Metric label="指数价" value={data.mark?.indexPrice.toLocaleString() ?? "--"} />
+      <Metric label="溢价" value={premium} />
+      <Metric label="资金费率" value={funding} />
+      <Metric label="未平仓量" value={data.openInterest?.contracts.toLocaleString() ?? "--"} />
+      <Metric label="OI 名义价值" value={data.openInterest?.notional?.toLocaleString() ?? "--"} />
+    </div>
+    <SectionTitle>多空与订单流</SectionTitle>
+    <div className="grid2">
+      <Metric label="全市场多空比" value={data.sentiment.globalAccounts?.longShortRatio.toFixed(3) ?? "--"} />
+      <Metric label="大户账户比" value={data.sentiment.topAccounts?.longShortRatio.toFixed(3) ?? "--"} />
+      <Metric label="大户持仓比" value={data.sentiment.topPositions?.longShortRatio.toFixed(3) ?? "--"} />
+      <Metric label="主动买卖比" value={data.sentiment.taker?.buySellRatio.toFixed(3) ?? "--"} />
+      <Metric label="买一" value={bid ? `${bid[0]} × ${bid[1]}` : "--"} />
+      <Metric label="卖一" value={ask ? `${ask[0]} × ${ask[1]}` : "--"} />
+      <Metric label="最近成交样本" value={String(data.recentTrades.length)} />
+      <Metric label="已捕获强平" value={String(data.liquidations.length)} />
+    </div>
+    <div className="note-block">资金费率历史 {data.fundingHistory.length} 条 · OI 历史 {data.openInterestHistory.length} 条 · 强平覆盖起点 {data.liquidationCoverageStartedAt ?? "连接中"}</div>
+  </>;
+}
+
 function BucketRow({ label, bucket }: { label: string; bucket: CapitalBucket }) {
   return (
     <>
@@ -56,6 +113,7 @@ function FlowMiniChart({ flow }: { flow: CockpitFlow }) {
 }
 
 export function FlowTab({ symbol }: { symbol: string }) {
+  if (/^[A-Z0-9]+USDT$/i.test(symbol)) return <DerivativesFlowTab symbol={symbol} />;
   const { data: flow, error } = useIntervalFetch<CockpitFlow>(`/api/symbols/${encodeURIComponent(symbol)}/flow`, 60_000);
 
   if (error) return <div className="note-block">资金流数据获取失败：{error}</div>;

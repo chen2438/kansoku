@@ -1,9 +1,7 @@
 import type { ChartDoc, RawBar, TimeframeKey } from "../../../shared/types.js";
 import { ClientError } from "../errors.js";
 import { buildChart, rebuild, refreshBody } from "../services/build.js";
-import { getEventRisk } from "../services/events.js";
 import { TIMEFRAME_ORDER } from "../services/intraday.js";
-import { getOptionsLevels } from "../services/optionsLevels.js";
 import { getLongbridgeStream, type CandlePeriod } from "../services/marketdata/longbridgeStream.js";
 import { classifySession } from "../services/session.js";
 import { predictionStale } from "../services/staleness.js";
@@ -17,6 +15,7 @@ const LIVE_TYPES = new Set(["flow", "intraday"]);
 const TF_TO_CANDLE_PERIOD: Record<TimeframeKey, CandlePeriod> = { m5: "5m", m15: "15m", h1: "60m" };
 const DEBOUNCE_MS = 250;
 const PUSH_FRESH_WINDOW_MS = 3_000;
+const isBinanceSymbol = (symbol: string): boolean => !symbol.includes(".") && /^[A-Z0-9]+USDT$/i.test(symbol);
 
 function chartIntervalMs(key?: string): number {
   const session = classifySession(Math.floor(Date.now() / 1000));
@@ -76,20 +75,10 @@ async function runPushRebuild(key: string): Promise<void> {
   const latestInput = latest.input as Record<string, unknown>;
   const timeframes = state.timeframes;
   const lastM5 = timeframes.m5?.[timeframes.m5.length - 1];
-  // Docs persisted before options/event support have no such input fields, and
-  // stored values freeze at analysis time — the live view refetches both (the
-  // getters are memory-cached, so this is free on the streaming hot path).
-  const symbol = latestInput.symbol;
-  const [optionsLevels, eventRisk] =
-    typeof symbol === "string"
-      ? await Promise.all([getOptionsLevels(symbol).catch(() => null), getEventRisk(symbol).catch(() => null)])
-      : [null, null];
   const input: Record<string, unknown> = {
     ...latestInput,
     timeframes,
     as_of: lastM5?.time ?? latestInput.as_of,
-    options_levels: optionsLevels ?? latestInput.options_levels ?? null,
-    event_risk: eventRisk ?? latestInput.event_risk ?? null,
   };
   const result = rebuild("intraday", input, latest.title);
   handle.pushData({ built: result.built, ...predictionFields({ ...latest, built: result.built }) });
@@ -110,6 +99,7 @@ function setupCandleState(key: string, id: string, viewCount: number | undefined
     unsubs: [],
   };
   candleStates.set(key, state);
+  if (isBinanceSymbol(symbol)) return;
   const stream = getLongbridgeStream();
   for (const tf of TIMEFRAME_ORDER) {
     const period = TF_TO_CANDLE_PERIOD[tf];

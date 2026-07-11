@@ -20,7 +20,7 @@ const dayKlineCache = new Map<string, { at: number; bars: RawBar[] }>();
 async function getDayKlineCached(symbol: string): Promise<RawBar[]> {
   const hit = dayKlineCache.get(symbol);
   if (hit && Date.now() - hit.at < DAY_KLINE_TTL_MS) return hit.bars;
-  const bars = await getProvider()
+  const bars = await getProvider(symbol)
     .getKline(symbol, "day", 60)
     .catch(() => [] as RawBar[]);
   if (bars.length) dayKlineCache.set(symbol, { at: Date.now(), bars });
@@ -73,12 +73,12 @@ async function prepareInput(type: ChartType, body: Body): Promise<Record<string,
     case "sepa": {
       const symbol = requireSymbol(body, "sepa");
       const count = Number(body.count ?? 260);
-      const provider = getProvider();
+      const provider = getProvider(symbol);
       const [kline, spyKline, news] = await Promise.all([
         (async () => (body.kline as RawBar[] | undefined) ?? (await provider.getKline(symbol, "day", count)))(),
         (async () =>
           (body.spy_kline as RawBar[] | undefined) ??
-          (body.skip_spy === true ? [] : await provider.getKline("SPY.US", "day", count)))(),
+          (body.skip_spy === true ? [] : await getProvider("SPY.US").getKline("SPY.US", "day", count)))(),
         provider.getNews(symbol),
       ]);
       return {
@@ -98,7 +98,7 @@ async function prepareInput(type: ChartType, body: Body): Promise<Record<string,
       const session = typeof body.session === "string" ? body.session : "all";
       let timeframes = body.timeframes as Record<string, RawBar[]> | undefined;
       let dayKline = body.day_kline as RawBar[] | undefined;
-      const provider = getProvider();
+      const provider = getProvider(symbol);
       const newsPromise = provider.getNews(symbol);
       const optionsPromise = getOptionsLevels(symbol);
       const eventRiskPromise = getEventRisk(symbol).catch(() => null);
@@ -134,7 +134,7 @@ async function prepareInput(type: ChartType, body: Body): Promise<Record<string,
       let symbol = typeof body.symbol === "string" ? body.symbol : null;
       if (!rows) {
         symbol = requireSymbol(body, "flow");
-        const provider = getProvider();
+        const provider = getProvider(symbol);
         if (!provider.getFlow) {
           throw new ClientError(
             `flow: provider "${provider.name}" has no capital-flow data`,

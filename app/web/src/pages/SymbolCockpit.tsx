@@ -28,10 +28,19 @@ interface PositionPayload {
   relvol: RelativeVolume | null;
 }
 
+interface SymbolValidation {
+  symbol: string;
+  source: string;
+  marketType: string;
+  contractType?: string;
+  underlyingType?: string;
+}
+
 export function SymbolCockpit({ sym }: { sym: string }) {
   const symLabel = sym.toUpperCase().replace(/\.US$/, "");
   const { mode, activeId: latestId, latestChecked, latestError, hasNewer, jumpToLatest, goToAnalysis, analyses } =
     useLatestAnalysis(sym);
+  const validation = useQuery<SymbolValidation>(`/api/symbols/${encodeURIComponent(sym)}/validate`);
 
   const { doc, error, degraded, intradayTf, setIntradayTf, loadHistory } = useIntradayDoc(latestId);
 
@@ -98,10 +107,24 @@ export function SymbolCockpit({ sym }: { sym: string }) {
         <h1>{sym}</h1>
         {latestError ? (
           <ErrorBox>{latestError}</ErrorBox>
+        ) : validation.error ? (
+          <ErrorBox>{validation.error}</ErrorBox>
         ) : (
           <>
-            <Empty>这只股票还没有 intraday 分析——点下面按钮让 AI 生成，或跑一次 intraday-signal</Empty>
-            <GenerateAnalysis sym={sym} />
+            <Empty>这个标的还没有 intraday 分析——点下面按钮让 AI 生成，或跑一次 intraday-signal</Empty>
+            {validation.data ? (
+              <>
+                <div className="symbol-source">
+                  <Badge>{validation.data.source}</Badge>
+                  <span>{validation.data.marketType}</span>
+                  {validation.data.contractType && <span>{validation.data.contractType}</span>}
+                  {validation.data.underlyingType && <span>{validation.data.underlyingType}</span>}
+                </div>
+                <GenerateAnalysis sym={sym} />
+              </>
+            ) : (
+              <Empty>正在验证数据源…</Empty>
+            )}
           </>
         )}
         <p>

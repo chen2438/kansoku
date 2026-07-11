@@ -23,9 +23,9 @@ import { macd } from "../services/indicators.js";
 import { coerceIntradayTimeframe } from "../services/intraday.js";
 import { computeRelativeVolume } from "../services/relvol.js";
 import { readActiveLessons } from "../services/lessons.js";
-import { getProvider } from "../services/marketdata/registry.js";
+import { getProvider, isBinanceSymbol } from "../services/marketdata/registry.js";
 import { getOptionsLevels } from "../services/optionsLevels.js";
-import type { RawPosition } from "../services/marketdata/types.js";
+import type { BinanceDerivativesSnapshot, RawPosition } from "../services/marketdata/types.js";
 import { easternDate } from "../services/session.js";
 import { listCharts, loadChart, type ListFilter } from "../services/store.js";
 import { listComments } from "./comments.js";
@@ -54,24 +54,26 @@ export interface DatapackDeps {
   listCharts: (filter: ListFilter) => Promise<ChartMeta[]>;
   loadChart: (id: string) => Promise<ChartDoc | null>;
   fetchOptionsLevels: (symbol: string) => Promise<IntradayOptionsLevels | null>;
+  fetchDerivatives?: (symbol: string) => Promise<BinanceDerivativesSnapshot | null>;
   readLessons: () => Promise<string[]>;
   now: () => Date;
 }
 
 export const defaultDatapackDeps: DatapackDeps = {
   fetchQuote: async (symbol) => {
-    const quotes = await getProvider().getQuotes([symbol]);
+    const quotes = await getProvider(symbol).getQuotes([symbol]);
     if (!quotes.length) throw new ClientError(`no quote data for ${symbol}`, undefined, 502);
     return normalizeQuote(quotes[0], Date.now());
   },
-  fetchKline: (symbol, period, count) => getProvider().getKline(symbol, period, count),
-  fetchFlow: (symbol) => getProvider().getFlow?.(symbol) ?? Promise.resolve([]),
-  fetchNews: (symbol) => getProvider().getNews(symbol),
+  fetchKline: (symbol, period, count) => getProvider(symbol).getKline(symbol, period, count),
+  fetchFlow: (symbol) => getProvider(symbol).getFlow?.(symbol) ?? Promise.resolve([]),
+  fetchNews: (symbol) => getProvider(symbol).getNews(symbol),
   fetchPositions: () => getProvider().getPositions?.() ?? Promise.resolve([]),
   listComments,
   listCharts,
   loadChart,
   fetchOptionsLevels: getOptionsLevels,
+  fetchDerivatives: (symbol) => getProvider(symbol).getDerivativesSnapshot?.(symbol) ?? Promise.resolve(null),
   readLessons: readActiveLessons,
   now: () => new Date(),
 };
@@ -119,6 +121,7 @@ export interface ReassessPack {
   prediction: IntradayPrediction | null;
   prediction_chart_id: string | null;
   position: CockpitPosition | null;
+  derivatives?: BinanceDerivativesSnapshot | null;
 }
 
 export async function findTodayLatestIntradayDoc(
@@ -237,7 +240,8 @@ export async function buildReassessPack(
   deps: DatapackDeps = defaultDatapackDeps,
 ): Promise<ReassessPack> {
   const now = deps.now();
-  const [barsList, flow, doc, positions, relvolBars, dayBars, news, spy, qqq, optionsLevels, lessons] = await Promise.all([
+  const binance = isBinanceSymbol(symbol);
+  const [barsList, flow, doc, positions, relvolBars, dayBars, news, spy, qqq, optionsLevels, lessons, derivatives] = await Promise.all([
     Promise.all(REASSESS_TIMEFRAMES.map((tf) => deps.fetchKline(symbol, tf.period, KLINE_COUNT))),
     deps.fetchFlow(symbol),
     findTodayLatestIntradayDoc(symbol, deps),
@@ -245,10 +249,11 @@ export async function buildReassessPack(
     deps.fetchKline(symbol, "15m", RELVOL_M15_BARS).catch(() => [] as RawBar[]),
     deps.fetchKline(symbol, "day", REASSESS_DAY_KLINE_COUNT).catch(() => [] as RawBar[]),
     deps.fetchNews(symbol).catch(() => [] as NewsItem[]),
-    deps.fetchQuote("SPY.US").catch(() => null),
-    deps.fetchQuote("QQQ.US").catch(() => null),
+    deps.fetchQuote(binance ? "BTCUSDT" : "SPY.US").catch(() => null),
+    deps.fetchQuote(binance ? "ETHUSDT" : "QQQ.US").catch(() => null),
     deps.fetchOptionsLevels(symbol).catch(() => null),
     deps.readLessons().catch(() => [] as string[]),
+    deps.fetchDerivatives?.(symbol).catch(() => null) ?? Promise.resolve(null),
   ]);
 
   const timeframes = {} as Record<TimeframeKey, ReassessTimeframe>;
@@ -291,6 +296,7 @@ export async function buildReassessPack(
     prediction,
     prediction_chart_id: doc?.id ?? null,
     position,
+    derivatives,
   };
 }
 

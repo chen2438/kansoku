@@ -930,7 +930,7 @@ export function buildIntraday(input: IntradayInput): { built: IntradayBuilt; met
       autoBeichi: tf.autoBeichi,
       pattern123: tf.pattern123,
       fvgZones: tf.fvgZones,
-      offSession: offSessionSegments(tf.candles.map((c) => c.time)),
+      offSession: /^[A-Z0-9]+USDT$/i.test(symbol) ? [] : offSessionSegments(tf.candles.map((c) => c.time)),
     };
   }
 

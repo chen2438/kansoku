@@ -600,9 +600,13 @@ a.zone-item:hover { text-decoration: none; background: var(--bg-hover); }
 @media (max-width: 1000px) { .home-grid { grid-template-columns: 1fr; } }
 
 .quickbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0 20px; }
+.quickbar-entry { position: relative; align-self: flex-start; padding-bottom: 18px; }
 .quickbar-input { width: 170px; }
+.quickbar-input[aria-invalid="true"] { border-color: var(--down); }
+.quickbar-error { position: absolute; left: 0; top: 34px; width: 260px; color: var(--down); font-size: var(--fs-sm); line-height: 1.2; }
 .quickbar-recent { font-size: var(--fs-base); color: var(--text-muted); display: flex; gap: 8px; align-items: center; }
 .quickbar-recent a { color: var(--text-secondary); }
+.symbol-source { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 8px 0 20px; color: var(--text-secondary); font-size: var(--fs-base); }
 
 .reassess-action { margin-left: auto; }
 

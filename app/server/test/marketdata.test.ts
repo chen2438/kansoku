@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getProvider, listProviders } from "../src/services/marketdata/registry.js";
+import { getProvider, isBinanceSymbol, listProviders } from "../src/services/marketdata/registry.js";
 import type { Capability, MarketDataProvider } from "../src/services/marketdata/types.js";
 
 const OPTIONAL_METHODS: Record<Capability, keyof MarketDataProvider> = {
@@ -23,6 +23,14 @@ describe("marketdata registry", () => {
   it("selects the provider named by MARKET_PROVIDER", () => {
     vi.stubEnv("MARKET_PROVIDER", "longbridge");
     expect(getProvider().name).toBe("longbridge");
+  });
+
+  it("routes USD-M symbols to Binance without changing the default provider", () => {
+    expect(isBinanceSymbol("BTCUSDT")).toBe(true);
+    expect(isBinanceSymbol("NVDAUSDT")).toBe(true);
+    expect(isBinanceSymbol("NVDA.US")).toBe(false);
+    expect(getProvider("BTCUSDT").name).toBe("binance-usdm");
+    expect(getProvider("NVDA.US").name).toBe("longbridge");
   });
 
   it("rejects an unknown MARKET_PROVIDER with a hint listing the options", () => {
