@@ -1,10 +1,9 @@
 import type { ChartDoc, RawBar, TimeframeKey } from "../../../../shared/types.js";
 import { ClientError } from "../errors.js";
 import { buildChart, rebuild, refreshBody } from "../services/build.js";
-import { getEventRisk } from "../services/events.js";
 import { TIMEFRAME_ORDER } from "../services/intraday.js";
-import { getOptionsLevels } from "../services/optionsLevels.js";
 import { getLongbridgeStream, type CandlePeriod } from "../services/marketdata/longbridgeStream.js";
+import { isBinanceSymbol } from "../services/symbol.utils.js";
 import { classifySession, isCurrentSessionId } from "../services/session.js";
 import { predictionStale } from "../services/staleness.js";
 import { loadChart } from "../services/store.js";
@@ -75,20 +74,10 @@ async function buildFromState(state: CandleState, latest: ChartDoc): Promise<Rec
   const latestInput = latest.input as Record<string, unknown>;
   const timeframes = state.timeframes;
   const lastM5 = timeframes.m5?.[timeframes.m5.length - 1];
-  // Docs persisted before options/event support have no such input fields, and
-  // stored values freeze at analysis time — the live view refetches both (the
-  // getters are memory-cached, so this is free on the streaming hot path).
-  const symbol = latestInput.symbol;
-  const [optionsLevels, eventRisk] =
-    typeof symbol === "string"
-      ? await Promise.all([getOptionsLevels(symbol).catch(() => null), getEventRisk(symbol).catch(() => null)])
-      : [null, null];
   const input: Record<string, unknown> = {
     ...latestInput,
     timeframes,
     as_of: lastM5?.time ?? latestInput.as_of,
-    options_levels: optionsLevels ?? latestInput.options_levels ?? null,
-    event_risk: eventRisk ?? latestInput.event_risk ?? null,
   };
   const result = rebuild("intraday", input, latest.title);
   return { built: result.built, ...predictionFields({ ...latest, built: result.built }) };
@@ -110,7 +99,10 @@ function setupCandleState(key: string, id: string, viewCount: number | undefined
   const state: CandleState = {
     id,
     viewCount,
-    timeframes: { ...((doc.input as Record<string, unknown>).timeframes as Partial<Record<TimeframeKey, RawBar[]>>) },
+    timeframes: Object.fromEntries(
+      Object.entries((doc.input as Record<string, unknown>).timeframes as Partial<Record<TimeframeKey, RawBar[]>>)
+        .map(([tf, bars]) => [tf, viewCount === undefined ? bars : bars?.slice(-viewCount)]),
+    ) as Partial<Record<TimeframeKey, RawBar[]>>,
     lastPushAt: null,
     lastRebuildAt: 0,
     pushMode: false,
@@ -118,6 +110,7 @@ function setupCandleState(key: string, id: string, viewCount: number | undefined
     unsubs: [],
   };
   candleStates.set(key, state);
+  if (isBinanceSymbol(symbol)) return;
   const stream = getLongbridgeStream();
   for (const tf of TIMEFRAME_ORDER) {
     const period = TF_TO_CANDLE_PERIOD[tf];

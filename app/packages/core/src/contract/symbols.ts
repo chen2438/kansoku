@@ -8,6 +8,7 @@ import type {
   SymbolAnalysisRow,
 } from "../../../../shared/types.js";
 import type { DeepDiveState } from "../ai/deepDive.js";
+import type { BinanceDerivativesSnapshot } from "../services/marketdata/types.js";
 import { defineRoutes } from "./defineRoutes.js";
 
 export interface JournalListRow {
@@ -29,6 +30,10 @@ export interface NoteResult {
 export type ReassessResult = { started: boolean; reason?: string };
 
 export type DeepDiveStartResult = { started: true } | { started: false; reason: "busy" | "disabled" };
+export interface SymbolValidation {
+  symbol: string; provider: "longbridge" | "binance-usdm"; source: string; marketType: string;
+  contractType?: string; underlyingType?: string;
+}
 
 export interface LatestChart extends ChartDoc {
   url: string;
@@ -36,6 +41,8 @@ export interface LatestChart extends ChartDoc {
 }
 
 export interface SymbolsApi {
+  validate(input: { sym: string }): Promise<SymbolValidation>;
+  derivatives(input: { sym: string }): Promise<BinanceDerivativesSnapshot>;
   flow(input: { sym: string }): Promise<CockpitFlow | null>;
   benchmark(input: { sym: string }): Promise<BenchmarkSeries[]>;
   position(input: { sym: string }): Promise<CockpitPosition | null>;
@@ -53,6 +60,8 @@ export interface SymbolsApi {
 }
 
 export const symbolsRoutes = defineRoutes<SymbolsApi>("symbols", {
+  validate: { method: "GET", path: "/:sym/validate" },
+  derivatives: { method: "GET", path: "/:sym/derivatives" },
   flow: { method: "GET", path: "/:sym/flow" },
   benchmark: { method: "GET", path: "/:sym/benchmark" },
   position: { method: "GET", path: "/:sym/position" },

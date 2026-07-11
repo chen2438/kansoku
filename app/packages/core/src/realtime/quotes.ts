@@ -2,6 +2,7 @@ import type { QuoteCell, QuoteSnapshot } from "../../../../shared/types.js";
 import { getLongbridgeStream } from "../services/marketdata/longbridgeStream.js";
 import type { ExtendedQuote, RawQuote } from "../services/marketdata/types.js";
 import { getProvider } from "../services/marketdata/registry.js";
+import { isBinanceSymbol } from "../services/symbol.utils.js";
 import { classifySession } from "../services/session.js";
 
 export type { RawQuote } from "../services/marketdata/types.js";
@@ -17,6 +18,7 @@ const SESSION_LABEL: Record<string, string> = {
 export function normalizeQuote(q: RawQuote, nowMs: number): QuoteCell {
   const regularLast = Number(q.last);
   const regularPct = Number(q.change_percentage);
+  if (isBinanceSymbol(q.symbol)) return { symbol: q.symbol, session: "24h", last: regularLast, pct: regularPct, regularLast, regularPct };
   const clock = classifySession(Math.floor(nowMs / 1000));
   if (clock === "regular") {
     return { symbol: q.symbol, session: "日盘", last: regularLast, pct: regularPct, regularLast, regularPct };

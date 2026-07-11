@@ -1,5 +1,6 @@
 import type { CockpitComment, SessionKind } from "../../../../shared/types.js";
 import { classifySession, easternDate } from "../services/session.js";
+import { isBinanceSymbol } from "../services/symbol.utils.js";
 import { listCharts } from "../services/store.js";
 import { runAnalyst as defaultRunAnalyst, escalationOnCooldown as defaultEscalationOnCooldown } from "./analyst.js";
 import { appendComment as defaultAppendComment } from "./comments.js";
@@ -198,6 +199,15 @@ async function runRegularTick(deps: SchedulerDeps, state: SchedulerState): Promi
   }
 }
 
+async function runContinuousTick(deps: SchedulerDeps, state: SchedulerState): Promise<void> {
+  const config = deps.aiConfig(); if (!config.commentModel) return;
+  const targets = (await deps.discoverTargets()).filter(isBinanceSymbol);
+  for (const symbol of targets) {
+    try { await handleSymbol(symbol, config, deps, state.lastCommentatorRunAt); }
+    catch (error) { console.error(`[ai-scheduler] ${symbol}:`, error instanceof Error ? error.message : String(error)); }
+  }
+}
+
 async function runPreTick(deps: SchedulerDeps, state: SchedulerState): Promise<void> {
   const nowMs = deps.now();
   if (nowMs - state.lastPreTickAt < PRE_TICK_MS) return;
@@ -228,6 +238,7 @@ async function runPostTick(deps: SchedulerDeps, state: SchedulerState): Promise<
 async function runTick(deps: SchedulerDeps, state: SchedulerState): Promise<void> {
   const session = deps.sessionKind(deps.now());
   if (session === "regular") return runRegularTick(deps, state);
+  await runContinuousTick(deps, state);
   if (session === "pre") return runPreTick(deps, state);
   if (session === "post") return runPostTick(deps, state);
 }

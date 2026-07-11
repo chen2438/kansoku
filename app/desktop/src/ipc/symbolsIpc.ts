@@ -7,6 +7,12 @@ export class SymbolsIpc extends IpcService implements WrapEnvelope<SymbolsApi> {
   static readonly groupName = "symbols";
 
   @IpcMethod()
+  validate(input: Parameters<SymbolsApi["validate"]>[0]) { return toEnvelope("symbols.validate", () => symbolsService.validate(input)); }
+
+  @IpcMethod()
+  derivatives(input: Parameters<SymbolsApi["derivatives"]>[0]) { return toEnvelope("symbols.derivatives", () => symbolsService.derivatives(input)); }
+
+  @IpcMethod()
   flow(input: Parameters<SymbolsApi["flow"]>[0]) {
     return toEnvelope("symbols.flow", () => symbolsService.flow(input));
   }
