@@ -6,7 +6,7 @@ import { client } from "./client";
 import { Home } from "./pages/Home";
 import { SettingsPage } from "./pages/settings/SettingsPage";
 import { SymbolCockpit } from "./pages/SymbolCockpit";
-import { navigate, useRoute } from "./router";
+import { navigate, routePath, useRoute } from "./router";
 import { ErrorBox } from "./ui";
 
 function Redirect({ to }: { to: string }) {
@@ -35,16 +35,17 @@ function ChartRedirect({ id }: { id: string }) {
 
 export function Router() {
   const route = useRoute();
+  const path = routePath(route);
 
-  if (route === "/overview" || route === "/charts") {
+  if (path === "/overview" || path === "/charts") {
     return <Redirect to="/" />;
   }
-  const chartMatch = route.match(/^\/charts\/(.+)$/);
+  const chartMatch = path.match(/^\/charts\/(.+)$/);
   if (chartMatch) {
     return <ChartRedirect id={decodeURIComponent(chartMatch[1])} />;
   }
-  const symbolMatch = route.match(/^\/symbol\/(.+)$/);
+  const symbolMatch = path.match(/^\/symbol\/(.+)$/);
   if (symbolMatch) return <SymbolCockpit sym={decodeURIComponent(symbolMatch[1])} />;
-  if (route === "/settings") return <SettingsPage />;
+  if (path === "/settings") return <SettingsPage />;
   return <Home />;
 }
