@@ -144,6 +144,12 @@ export function PredictionTab({ built, activeTf, predictionUpdatedAt, prediction
           <div className="grid2">
             <div className="k">入场</div>
             <div className="v">${px(ep.entry)}</div>
+            {ep.trigger != null && ep.entry_kind && ep.entry_kind !== "market" && (
+              <>
+                <div className="k">{ep.entry_kind === "retest" ? "站上触发" : "突破触发"}</div>
+                <div className="v">${px(ep.trigger)}</div>
+              </>
+            )}
             <div className="k">止损</div>
             <div className="v down">${px(ep.stop)}</div>
             <div className="k">目标1 ({signed(ep.target1_pct, 1)}%)</div>

@@ -204,6 +204,15 @@ timeframe data + Step 3's numbers, decide:
    现在没有可执行的入场/止损/目标，两侧的条件应对全部写进 `range_bound_plan`
    （见上一条），不要一边喊观望一边给价位。Steps 5–6 below (position size,
    trade management) likewise apply only to directional calls.
+   - **触发字段（`entry_kind` + `trigger`，必给）.** 入场意图要结构化，供实盘
+     挂单/自动执行读取，不能只写在文字里。`entry` 是挂单/回踩目标价，`trigger`
+     是"确认成立"价：`retest`（回踩型）—— `entry` 是回踩目标，`trigger` 是回踩后
+     收盘"重新站上"的确认位（做多 `trigger` 高于 `entry`，做空相反）；`breakout`
+     （突破型）—— `trigger` 是突破触发位（做多在上、做空在下），`entry` 可与
+     `trigger` 接近；`market`（立即市价）—— 不需要 `trigger`。做多须 `stop < entry`
+     且 `trigger > stop`，做空镜像。系统按 `trigger` 收盘确认判"已触发"（回踩型是
+     "回踩不破再站上"，避免碰一下就当成交去接飞刀），缺 `trigger` 才回退到"碰
+     `entry` 即触发"的旧口径。
    - **Stop = structure, not a number.** The stop sits beyond a named structure
      (swing point 外沿、123 结构的 ①、区间边界), never a bare round number or
      arbitrary %. Name the structure in `stop_note`.

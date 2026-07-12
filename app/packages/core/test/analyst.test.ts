@@ -159,6 +159,38 @@ describe("validatePrediction", () => {
     expect(issues.join("")).toContain("不足 1:1");
   });
 
+  it("passes a long retest plan with a coherent trigger", () => {
+    const issues = validatePrediction({
+      ...validPrediction,
+      entry_plan: { entry: 100, stop: 97, target1: 104, target2: 108, entry_kind: "retest", trigger: 101 },
+    });
+    expect(issues).toEqual([]);
+  });
+
+  it("rejects a trigger on the wrong side of the stop", () => {
+    const issues = validatePrediction({
+      ...validPrediction,
+      entry_plan: { entry: 100, stop: 97, target1: 104, entry_kind: "breakout", trigger: 96 },
+    });
+    expect(issues.join("")).toContain("触发价 trigger 必须高于止损");
+  });
+
+  it("rejects a retest trigger below the entry for a long", () => {
+    const issues = validatePrediction({
+      ...validPrediction,
+      entry_plan: { entry: 100, stop: 97, target1: 104, entry_kind: "retest", trigger: 99 },
+    });
+    expect(issues.join("")).toContain("应不低于入场价");
+  });
+
+  it("requires a trigger when entry_kind is retest / breakout", () => {
+    const issues = validatePrediction({
+      ...validPrediction,
+      entry_plan: { entry: 100, stop: 97, target1: 104, entry_kind: "breakout" },
+    });
+    expect(issues.join("")).toContain("必须给出触发价 trigger");
+  });
+
   it("passes a neutral call with a range zone and no entry plan", () => {
     const { entry_plan: _plan, ...rest } = validPrediction;
     expect(

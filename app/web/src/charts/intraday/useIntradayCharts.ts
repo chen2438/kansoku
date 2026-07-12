@@ -55,6 +55,7 @@ interface Handle {
 
 const NEAR_LEFT_BARS = 10;
 const VWAP_COLOR = "#c084fc";
+const TRIGGER_COLOR = "#f0883e";
 const DAY_LEVEL_COLOR = "#8b949e";
 const CALL_WALL_COLOR = "#e3b341";
 const PUT_WALL_COLOR = "#39c5cf";
@@ -254,6 +255,10 @@ export function useIntradayCharts(
       const deadColor = "#6e7681";
       const suffix = ep.entry_status ? (ENTRY_STATUS_SUFFIX[ep.entry_status] ?? "") : "";
       h.planLines.push(addPriceLine(h.candle, { price: ep.entry, color: planDead ? deadColor : theme.accent, lineWidth: 2, lineStyle: planDead ? 2 : 0, title: `入场 $${priceStr(ep.entry, decimals)}${suffix}` }));
+      if (ep.trigger != null && ep.entry_kind && ep.entry_kind !== "market") {
+        const kindLabel = ep.entry_kind === "retest" ? "站上触发" : "突破触发";
+        h.planLines.push(addPriceLine(h.candle, { price: ep.trigger, color: planDead ? deadColor : TRIGGER_COLOR, lineWidth: 1, lineStyle: 3, title: `${kindLabel} $${priceStr(ep.trigger, decimals)}` }));
+      }
       h.planLines.push(addPriceLine(h.candle, { price: ep.stop, color: planDead ? deadColor : theme.down, lineWidth: 2, lineStyle: 2, title: `止损 $${priceStr(ep.stop, decimals)}` }));
       h.planLines.push(addPriceLine(h.candle, { price: ep.target1, color: planDead ? deadColor : theme.up, lineWidth: 1, lineStyle: 2, title: `T1 $${priceStr(ep.target1, decimals)}` }));
       h.planLines.push(addPriceLine(h.candle, { price: ep.target2, color: planDead ? deadColor : seriesPalette[1], lineWidth: 1, lineStyle: 2, title: `T2 $${priceStr(ep.target2, decimals)}` }));

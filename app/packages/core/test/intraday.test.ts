@@ -249,6 +249,42 @@ describe("intraday parity vs python golden fixture", () => {
     expect(resolveEntryPlanStatus(plan, "long", null, falling)).toBeNull();
   });
 
+  it("uses trigger + entry_kind for confirmation-based entries", () => {
+    const bar = (i: number, high: number, low: number, close: number) => ({ time: 1000 + i * 300, high, low, close });
+
+    // retest long: entry 1014 (回踩目标), trigger 1020 (重新站上确认), stop 990.5
+    const retest = { entry: 1014, stop: 990.5, trigger: 1020, entry_kind: "retest" as const };
+
+    // touches entry but never closes back above trigger → still waiting (不接飞刀)
+    const touchedNoReclaim = [bar(0, 1015, 1010, 1013), bar(1, 1017, 1012, 1016)];
+    expect(resolveEntryPlanStatus(retest, "long", 1000, touchedNoReclaim)?.status).toBe("waiting");
+
+    // touches entry, then a later close reclaims the trigger → triggered
+    const touchedThenReclaim = [bar(0, 1015, 1010, 1013), bar(1, 1022, 1016, 1021)];
+    expect(resolveEntryPlanStatus(retest, "long", 1000, touchedThenReclaim)?.status).toBe("triggered");
+
+    // touches entry, then breaks toward stop before reclaiming → invalidated
+    const touchedThenBreak = [bar(0, 1015, 1010, 1013), bar(1, 1013, 989, 991)];
+    expect(resolveEntryPlanStatus(retest, "long", 1000, touchedThenBreak)?.status).toBe("invalidated");
+
+    // breakout long: triggered on a close above the trigger (无需回踩)
+    const breakout = { entry: 1014, stop: 990.5, trigger: 1018, entry_kind: "breakout" as const };
+    expect(resolveEntryPlanStatus(breakout, "long", 1000, [bar(0, 1019, 1015, 1018)])?.status).toBe("triggered");
+
+    // market: triggered immediately on the first post-anchor bar
+    const market = { entry: 1014, stop: 990.5, entry_kind: "market" as const };
+    expect(resolveEntryPlanStatus(market, "long", 1000, [bar(0, 1010, 1008, 1009)])?.status).toBe("triggered");
+
+    // no entry_kind → falls back to touch-based trigger even if a trigger number is present
+    const noKind = { entry: 1014, stop: 990.5, trigger: 1020 };
+    expect(resolveEntryPlanStatus(noKind, "long", 1000, [bar(0, 1015, 1010, 1012)])?.status).toBe("triggered");
+
+    // short retest mirror: entry 990 (回踩目标), trigger 984 (重新跌破确认), stop 1000
+    const shortRetest = { entry: 990, stop: 1000, trigger: 984, entry_kind: "retest" as const };
+    const shortTouchThenReclaim = [bar(0, 992, 988, 990), bar(1, 987, 982, 983)];
+    expect(resolveEntryPlanStatus(shortRetest, "short", 1000, shortTouchThenReclaim)?.status).toBe("triggered");
+  });
+
   it("caps visible markers per bar in built output", () => {
     const { built } = buildIntraday(input);
     for (const tf of Object.values(built.timeframes)) {

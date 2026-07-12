@@ -37,6 +37,7 @@ const SYSTEM_PROMPT = [
   "- direction：明确 long / short / neutral。",
   "- anchor：必填，给出判断锚点（哪个周期、时间、价格）——没有锚点的预测事后无法对账。锚点周期默认 m15（观望也是——观望是 15 分钟级别看不出方向的陈述，不要因为盯着 5 分钟 K 线就锚在 m5）；只有纯超短的抢单判断才锚 m5，波段级陈述才锚 h1。时间对齐到该周期的 K 线边界（m15 → :00/:15/:30/:45）。",
   "- entry_plan：只在 long / short 时给出，入场 entry、止损 stop、目标 target1（必填，价格或百分比皆可）/ target2。止损必须依托具体结构（摆动点外沿、123 结构的①、区间边界），在 rationale 里写明是哪个结构；做多止损在入场下方、目标在上方，做空相反。T1 口径盈亏比不足 1:1 的计划不要提交——换结构重做或转 neutral；1:1 到 2:1 之间允许，但必须在 comment 里明说赔率偏薄。",
+  "- entry_plan 必须给出结构化触发字段 entry_kind + trigger（供实盘挂单/自动执行读取，不能只写在文字里）：entry 是挂单/回踩目标价，trigger 是\"确认成立\"价。retest（回踩型）= entry 是回踩目标，trigger 是回踩后收盘\"重新站上\"的确认位（做多 trigger 高于 entry、做空相反）；breakout（突破型）= trigger 是突破触发位（做多在上、做空在下），entry 可与 trigger 接近；market（立即市价）= 不需要 trigger。做多要求 stop < entry 且 trigger 在 stop 的盈利侧（trigger > stop），做空镜像。",
   "- neutral（观望）不要提交 entry_plan——观望就是现在没有可执行的入场/止损/目标。但必须在 range_plan 里给出箱体下沿 low / 上沿 high（观望 = 预判价格守在这个区间内，事后按守住/破位对账），两侧的条件应对写进 long_tactic / short_tactic。",
   "- scenarios：2 到 4 个情景（通常是上破 / 震荡 / 下破三个，按真实结构给，不要硬凑数量），probability 用 0–100 的百分数，合计约为 100。",
   "- comment：一句话中文白话结论，会作为点评写入。若快照里持仓不为空，comment 必须包含对现有持仓的处置（加 / 减 / 持 / 清）并对照成本价说明理由。",
@@ -54,6 +55,14 @@ const anchorSchema = Type.Object({
 const entryPlanSchema = Type.Object({
   entry: Type.Number(),
   stop: Type.Number(),
+  entry_kind: Type.Optional(
+    Type.Union([Type.Literal("retest"), Type.Literal("breakout"), Type.Literal("market")], {
+      description: "入场类型：retest 回踩确认 / breakout 突破触发 / market 立即市价",
+    }),
+  ),
+  trigger: Type.Optional(
+    Type.Number({ description: "触发价/确认价：retest=回踩后重新站上的确认位；breakout=突破触发位；market 不需要" }),
+  ),
   target1: Type.Optional(Type.Number()),
   target2: Type.Optional(Type.Number()),
   target1_pct: Type.Optional(Type.Number()),
@@ -136,6 +145,25 @@ export function validatePrediction(params: PredictionParams): string[] {
     const risk = direction === "long" ? entry - stop : stop - entry;
     if (risk <= 0) {
       issues.push(direction === "long" ? "做多止损必须低于入场价" : "做空止损必须高于入场价");
+    }
+    if (plan.trigger != null && Number.isFinite(plan.trigger)) {
+      const trig = plan.trigger;
+      const onProfitSide = direction === "long" ? trig > stop : trig < stop;
+      if (!onProfitSide) {
+        issues.push(direction === "long" ? "触发价 trigger 必须高于止损" : "触发价 trigger 必须低于止损");
+      }
+      if (plan.entry_kind === "retest") {
+        const reclaimSide = direction === "long" ? trig >= entry : trig <= entry;
+        if (!reclaimSide) {
+          issues.push(
+            direction === "long"
+              ? "回踩型 retest：触发价 trigger（重新站上位）应不低于入场价 entry（回踩目标）"
+              : "回踩型 retest：触发价 trigger（重新跌破位）应不高于入场价 entry（回踩目标）",
+          );
+        }
+      }
+    } else if (plan.entry_kind === "retest" || plan.entry_kind === "breakout") {
+      issues.push("entry_kind 为 retest / breakout 时必须给出触发价 trigger");
     }
     const t1 = resolveTarget(entry, direction, plan.target1, plan.target1_pct);
     const t2 = resolveTarget(entry, direction, plan.target2, plan.target2_pct);
