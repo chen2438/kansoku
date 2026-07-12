@@ -5,6 +5,7 @@ import type { BinanceDerivativesSnapshot, BinanceInstrument, MarketDataProvider,
 
 const BASE = process.env.BINANCE_FUTURES_REST_URL ?? "https://fapi.binance.com";
 const PERIODS = new Set(["1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d", "3d", "1w", "1M"]);
+const PERIOD_ALIASES: Record<string, string> = { day: "1d" };
 let infoCache: { at: number; rows: Map<string, BinanceInstrument> } | null = null;
 
 async function request<T>(path: string, params: Record<string, string | number> = {}): Promise<T> {
@@ -19,14 +20,45 @@ async function request<T>(path: string, params: Record<string, string | number> 
   }
 }
 
-export async function getBinanceInstrument(raw: string): Promise<BinanceInstrument> {
+async function getBinanceInstruments(): Promise<Map<string, BinanceInstrument>> {
   if (!infoCache || Date.now() - infoCache.at > 30 * 60_000) {
     const data = await request<{ symbols: BinanceInstrument[] }>("/fapi/v1/exchangeInfo");
     infoCache = { at: Date.now(), rows: new Map(data.symbols.map((row) => [row.symbol, { ...row, underlyingSubType: row.underlyingSubType ?? [] }])) };
   }
-  const row = infoCache.rows.get(raw.toUpperCase());
+  return infoCache.rows;
+}
+
+export async function getBinanceInstrument(raw: string): Promise<BinanceInstrument> {
+  const row = (await getBinanceInstruments()).get(raw.toUpperCase());
   if (!row) throw new ClientError(`unknown Binance USD-M symbol: ${raw}`, "Try BTCUSDT, ETHUSDT, NVDAUSDT, XAUUSDT or another listed USD-M contract.", 404);
   return row;
+}
+
+export interface BinanceVolumeLeader {
+  symbol: string;
+  lastPrice: number;
+  changePercent: number;
+  quoteVolume: number;
+}
+
+export async function getBinanceTopUsdtPerpetuals(limit = 20): Promise<BinanceVolumeLeader[]> {
+  const instruments = await getBinanceInstruments();
+  const tickers = await request<Array<{ symbol: string; lastPrice: string; priceChangePercent: string; quoteVolume: string }>>("/fapi/v1/ticker/24hr");
+  return tickers
+    .filter((ticker) => {
+      const instrument = instruments.get(ticker.symbol);
+      return instrument?.status === "TRADING" && instrument.quoteAsset === "USDT" &&
+        (instrument.contractType === "PERPETUAL" || instrument.contractType === "TRADIFI_PERPETUAL");
+    })
+    .map((ticker) => ({
+      symbol: ticker.symbol,
+      lastPrice: n(ticker.lastPrice),
+      changePercent: n(ticker.priceChangePercent),
+      quoteVolume: n(ticker.quoteVolume),
+    }))
+    .filter((ticker) => Number.isFinite(ticker.quoteVolume))
+    .sort((a, b) => b.quoteVolume - a.quoteVolume)
+    .slice(0, Math.max(1, Math.min(100, Math.floor(limit))));
 }
 
 const n = (value: unknown) => Number(value);
@@ -38,8 +70,9 @@ export const binanceProvider: MarketDataProvider = {
   name: "binance-usdm", capabilities: new Set(),
   async getKline(raw, period, count): Promise<RawBar[]> {
     const symbol = raw.toUpperCase(); await getBinanceInstrument(symbol);
-    if (!PERIODS.has(period)) throw new ClientError(`unsupported Binance kline period: ${period}`);
-    const rows = await request<Array<[number, string, string, string, string, string]>>("/fapi/v1/klines", { symbol, interval: period, limit: Math.min(1500, Math.max(1, Math.floor(count))) });
+    const interval = PERIOD_ALIASES[period] ?? period;
+    if (!PERIODS.has(interval)) throw new ClientError(`unsupported Binance kline period: ${period}`);
+    const rows = await request<Array<[number, string, string, string, string, string]>>("/fapi/v1/klines", { symbol, interval, limit: Math.min(1500, Math.max(1, Math.floor(count))) });
     return rows.map((r) => ({ time: new Date(r[0]).toISOString(), open: r[1], high: r[2], low: r[3], close: r[4], volume: r[5] }));
   },
   async getQuotes(symbols): Promise<RawQuote[]> {

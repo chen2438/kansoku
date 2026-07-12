@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import { join } from "node:path";
 import type { IntradayPrediction, RawBar, SymbolAnalysisRow } from "../../../../../shared/types.js";
 import { runAnalyst } from "../../ai/analyst.js";
+import { binanceTopAnalysisState, startBinanceTopAnalysis } from "../../ai/binanceBatch.js";
 import { listCommentDates, listComments } from "../../ai/comments.js";
 import { deepDiveState, startDeepDive } from "../../ai/deepDive.js";
 import { aiConfig } from "../../ai/models.js";
@@ -187,6 +188,15 @@ export const symbolsService: SymbolsApi = {
     const result = runAnalyst({ symbol: sym, origin: "manual", deps: { model } });
     void result.done?.catch(() => {});
     return { started: result.started, ...(result.reason ? { reason: result.reason } : {}) };
+  },
+
+  async binanceTopAnalysisStart() {
+    if (!aiConfig().analystModel) throw new ClientError("analyst layer disabled", "请先在设置中配置分析模型。", 503);
+    return startBinanceTopAnalysis();
+  },
+
+  async binanceTopAnalysisStatus() {
+    return binanceTopAnalysisState();
   },
 
   async note(input) {

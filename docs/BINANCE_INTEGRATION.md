@@ -53,6 +53,8 @@ Electron 使用等价的 `symbols.validate` 与 `symbols.derivatives` IPC。
 
 `ReassessPack.derivatives` 向 analyst 提供资金费率、OI、多空结构、盘口、成交和强平。Binance 的市场参照使用 BTCUSDT/ETHUSDT。已有分析且租约有效的 Binance 标的会在美股休市、夜间和周末继续接受 scheduler 巡检。
 
+首页的 `AI 分析 Binance Top 20` 会按 Binance 24 小时 USDT 成交额实时选取交易中的永续合约，并以 2 路并发运行 Analyst。批次状态仅保存在当前进程内，服务重启后清空；每项只有实际生成新图表才算完成。
+
 ## 配置与验证
 
 可选配置：
@@ -90,4 +92,5 @@ pnpm typecheck
 - 修复混合盘面复盘错误地统一使用 Longbridge provider，导致 Binance 合约缺少涨跌和无法判定的问题。
 - 修复带 `analysis` 查询参数的标的页面把查询串拼入 symbol，导致手动重新分析失败的问题。
 - 修复 Electron 打包 `pi-ai` 后 OAuth 动态模块路径失效，导致 Codex 分析零调用退出的问题；同时透传底层 Agent provider 错误。
+- 新增一键批量分析 Binance USDT 永续 24 小时成交额 Top 20，提供逐标的进度与失败状态。
 - 安装 Node 22，以满足上游 pnpm 11 要求。

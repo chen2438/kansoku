@@ -2,9 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const models = vi.hoisted(() => ({ aiConfig: vi.fn() }));
 const analyst = vi.hoisted(() => ({ runAnalyst: vi.fn() }));
+const batch = vi.hoisted(() => ({ startBinanceTopAnalysis: vi.fn(), binanceTopAnalysisState: vi.fn() }));
 
 vi.mock("../../packages/core/src/ai/models.js", () => models);
 vi.mock("../../packages/core/src/ai/analyst.js", () => analyst);
+vi.mock("../../packages/core/src/ai/binanceBatch.js", () => batch);
 
 const { tsukiRequest } = await import("./helpers.js");
 
@@ -12,6 +14,8 @@ describe("POST /:sym/reassess", () => {
   beforeEach(() => {
     models.aiConfig.mockReset();
     analyst.runAnalyst.mockReset();
+    batch.startBinanceTopAnalysis.mockReset();
+    batch.binanceTopAnalysisState.mockReset();
   });
 
   it("returns started:false when the analyst layer is disabled", async () => {
@@ -37,5 +41,23 @@ describe("POST /:sym/reassess", () => {
     analyst.runAnalyst.mockReturnValue({ started: false, reason: "already running" });
     const res = await tsukiRequest("/api/symbols/MU/reassess", { method: "POST" });
     expect(await res.json()).toEqual({ ok: true, data: { started: false, reason: "already running" } });
+  });
+});
+
+describe("Binance Top volume analysis routes", () => {
+  it("starts a batch through the static route", async () => {
+    models.aiConfig.mockReturnValue({ commentModel: null, analystModel: { id: "m" } });
+    batch.startBinanceTopAnalysis.mockResolvedValue({ id: "batch-1", status: "running", startedAt: "now", items: [] });
+    const res = await tsukiRequest("/api/symbols/binance/top-volume-analysis", { method: "POST" });
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.id).toBe("batch-1");
+    expect(batch.startBinanceTopAnalysis).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns the current batch status", async () => {
+    batch.binanceTopAnalysisState.mockReturnValue({ id: "batch-1", status: "completed", startedAt: "now", items: [] });
+    const res = await tsukiRequest("/api/symbols/binance/top-volume-analysis/status");
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.status).toBe("completed");
   });
 });

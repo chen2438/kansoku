@@ -29,6 +29,24 @@ export interface NoteResult {
 
 export type ReassessResult = { started: boolean; reason?: string };
 
+export type BinanceBatchItemStatus = "queued" | "running" | "completed" | "failed";
+export interface BinanceBatchItem {
+  symbol: string;
+  rank: number;
+  quoteVolume: number;
+  changePercent: number;
+  status: BinanceBatchItemStatus;
+  chartId?: string;
+  error?: string;
+}
+export interface BinanceBatchState {
+  id: string;
+  status: "running" | "completed";
+  startedAt: string;
+  finishedAt?: string;
+  items: BinanceBatchItem[];
+}
+
 export type DeepDiveStartResult = { started: true } | { started: false; reason: "busy" | "disabled" };
 export interface SymbolValidation {
   symbol: string; provider: "longbridge" | "binance-usdm"; source: string; marketType: string;
@@ -53,6 +71,8 @@ export interface SymbolsApi {
   journal(input: { sym: string }): Promise<JournalListRow[]>;
   journalEntry(input: { sym: string; name: string }): Promise<JournalEntry>;
   reassess(input: { sym: string }): Promise<ReassessResult>;
+  binanceTopAnalysisStart(input?: Record<string, never>): Promise<BinanceBatchState>;
+  binanceTopAnalysisStatus(input?: Record<string, never>): Promise<BinanceBatchState | null>;
   note(input: { sym: string }): Promise<NoteResult>;
   deepDive(input: { sym: string }): Promise<DeepDiveStartResult>;
   deepDiveStatus(input: { sym: string }): Promise<DeepDiveState>;
@@ -72,6 +92,8 @@ export const symbolsRoutes = defineRoutes<SymbolsApi>("symbols", {
   journal: { method: "GET", path: "/:sym/journal" },
   journalEntry: { method: "GET", path: "/:sym/journal/:name" },
   reassess: { method: "POST", path: "/:sym/reassess" },
+  binanceTopAnalysisStart: { method: "POST", path: "/binance/top-volume-analysis" },
+  binanceTopAnalysisStatus: { method: "GET", path: "/binance/top-volume-analysis/status" },
   note: { method: "GET", path: "/:sym/note", raw: "body" },
   deepDive: { method: "POST", path: "/:sym/deep-dive", raw: "body" },
   deepDiveStatus: { method: "GET", path: "/:sym/deep-dive/status", raw: "body" },

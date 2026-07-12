@@ -14,6 +14,18 @@ describe("Binance USD-M provider", () => {
     expect(await binanceProvider.getKline("BTCUSDT", "5m", 1)).toEqual([{ time: "2023-11-14T22:13:20.000Z", open: "100", high: "110", low: "90", close: "105", volume: "12" }]);
   });
 
+  it("maps the shared daily period to Binance 1d klines", async () => {
+    const fetchMock = vi.fn(async (input: URL | RequestInfo) => String(input).includes("exchangeInfo")
+      ? json({ symbols: [instrument] })
+      : json([[1_700_000_000_000, "100", "110", "90", "105", "12"]]));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await binanceProvider.getKline("BTCUSDT", "day", 30);
+
+    const klineUrl = fetchMock.mock.calls.map(([input]) => String(input)).find((url) => url.includes("/fapi/v1/klines"));
+    expect(klineUrl).toContain("interval=1d");
+  });
+
   it("assembles mark, OI, sentiment, depth and trades", async () => {
     vi.stubGlobal("fetch", vi.fn(async (input: URL | RequestInfo) => {
       const path = new URL(String(input)).pathname;

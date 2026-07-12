@@ -14,6 +14,7 @@ import { PositionsCard } from "./home/PositionsCard";
 import { QuickBar } from "./home/QuickBar";
 import { RecapBoard } from "./home/RecapBoard";
 import { WatchBoard } from "./home/WatchBoard";
+import { BinanceTopAnalysis } from "./home/BinanceTopAnalysis";
 
 const SESSION_LABEL: Record<string, string> = { pre: "盘前", regular: "盘中", post: "盘后", overnight: "休市" };
 const NOTICE_LABEL: Record<string, string> = { "chart-not-found": "该图表不存在，已为你返回首页" };
@@ -66,6 +67,7 @@ export function Home() {
       {notice && NOTICE_LABEL[notice] && <ErrorBox>{NOTICE_LABEL[notice]}</ErrorBox>}
       <QuoteBar />
       <QuickBar shortcuts={shortcuts} />
+      {isToday && <BinanceTopAnalysis />}
       {switcherDates.length > 0 && (
         <div className="cross-section-switcher">
           {switcherDates.map((d) => (

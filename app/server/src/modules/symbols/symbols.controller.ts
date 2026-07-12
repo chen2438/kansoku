@@ -5,6 +5,16 @@ import { ClientError } from "../../../../packages/core/src/errors.js";
 
 @Controller("symbols")
 export class SymbolsController {
+  @Post("/binance/top-volume-analysis")
+  async startBinanceTopAnalysis() {
+    return { ok: true, data: await symbolsService.binanceTopAnalysisStart() };
+  }
+
+  @Get("/binance/top-volume-analysis/status")
+  async getBinanceTopAnalysisStatus() {
+    return { ok: true, data: await symbolsService.binanceTopAnalysisStatus() };
+  }
+
   @Get("/:sym/validate")
   async validate(@Param("sym") sym: string) { return { ok: true, data: await symbolsService.validate({ sym }) }; }
 
