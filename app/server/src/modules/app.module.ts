@@ -1,5 +1,6 @@
 import { Module } from "@tsuki-hono/common";
 import { AnnotationsModule } from "./annotations/annotations.module.js";
+import { BinanceAccountModule } from "./binance-account/binanceAccount.module.js";
 import { ChartsModule } from "./charts/charts.module.js";
 import { ChatModule } from "./chat/chat.module.js";
 import { CredentialsModule } from "./credentials/credentials.module.js";
@@ -24,6 +25,7 @@ import { SymbolsModule } from "./symbols/symbols.module.js";
     LegacyModule,
     CredentialsModule,
     LobeHubModule,
+    BinanceAccountModule,
   ],
 })
 export class AppModule {}

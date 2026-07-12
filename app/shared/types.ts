@@ -369,11 +369,16 @@ export interface IntradayEntryPlan {
   entry_zone: IntradayPriceZone | null;
   target_contexts: IntradayTargetContext[];
   price_zones: IntradayPriceZone[];
+  // 结构化触发价：真正武装入场的确认位。retest=回踩后"重新站上"的确认位（与回踩目标 entry 区分）；
+  // breakout=突破触发位；market/缺省=碰 entry 即触发（回退旧逻辑）。
+  trigger?: number | null;
+  entry_kind?: EntryKind | null;
   entry_status?: EntryPlanStatus | null;
   entry_status_note?: string | null;
 }
 
 export type EntryPlanStatus = "waiting" | "triggered" | "invalidated" | "stopped";
+export type EntryKind = "retest" | "breakout" | "market";
 
 export type IntradayPriceZoneKind =
   | "entry"
@@ -439,6 +444,8 @@ export interface IntradayPrediction {
   entry_plan?: {
     entry: number;
     stop: number;
+    trigger?: number;
+    entry_kind?: EntryKind;
     target1?: number;
     target2?: number;
     target1_pct?: number;

@@ -77,6 +77,10 @@ export function useRoute(): string {
   return route;
 }
 
+export function routePath(route: string): string {
+  return route.split("?", 1)[0] || "/";
+}
+
 export function navigate(route: string, options: { replace?: boolean } = {}): void {
   const store = currentStore();
   if (route === store.getRoute()) return;

@@ -18,7 +18,7 @@ const DEFAULT_TIMEOUT_MS = 600_000;
 const ESCALATION_COOLDOWN_MS = 30 * 60_000;
 
 const SYSTEM_PROMPT = [
-  "你是短线技术分析员，为单一美股标的做多周期（5 分钟 / 15 分钟 / 1 小时 / 日线）重估。",
+  "你是短线技术分析员，为单一美股或 Binance USD-M 永续合约做多周期（5 分钟 / 15 分钟 / 1 小时 / 日线）重估。",
   "工作流程：",
   "1. 先调用 read_data_pack 拿到快照（多周期 K 线摘要、资金流、相对成交量、日内关键价位、日线背景 day_context（日线趋势/20 与 50 日均线/近 20 日高低/VWAP）、期权墙 options_levels、教训清单 lessons、大盘参照 SPY/QQQ、新闻、已归档预测、持仓）。",
   "2. 需要时调用 fetch_kline 补拉某个周期的更多 K 线、fetch_news 再拉最新消息。",
@@ -28,6 +28,7 @@ const SYSTEM_PROMPT = [
   "- 周期分工：日线定背景（day_context 的趋势与关键位——逆日线的结论要单独说明理由），1 小时定趋势方向，15 分钟定结构与入场，5 分钟只做触发与微调。",
   "- 先定级：快照新闻里有当天能动价的事（财报/指引、政策、行业大消息、已明显砸出行情的新闻）就按催化日处理——消息主导，纯技术面情景的概率封顶 40，必要时直接 neutral；否则按平静日，技术面主导。",
   "- 大盘对齐：对照快照 market 里 SPY/QQQ 的当日方向，逆着大盘的结论必须在 comment 里给一句理由。",
+  "- Binance 永续：derivatives 非空时必须结合标记价/指数价偏离、资金费率、OI、多空比、主动买卖、盘口及强平覆盖；market 此时承载 BTCUSDT/ETHUSDT。TradFi 永续在传统市场休市时要警惕指数冻结、溢价与开盘跳空。",
   "- 量能：突破/反转类结论要引用相对成交量 rel_volume 佐证；无量突破按存疑处理，不要当确认信号。",
   "- 期权位：options_levels 是现价附近高持仓行权价（dominant=call 的是上方磁铁/压力，dominant=put 的是下方支撑墙）。止损和目标不要贴着这些价位或整数关口放——那是止损扎堆区，容易被一波冲高/杀低精确扫掉；突破类情景的触发价参照这些墙来定。",
   "- 教训清单：lessons 里每一条都是过去真金白银换来的规则，结论不得重蹈任何一条；有适用条目时在 comment 里点名引用。",
@@ -36,12 +37,13 @@ const SYSTEM_PROMPT = [
   "- direction：明确 long / short / neutral。",
   "- anchor：必填，给出判断锚点（哪个周期、时间、价格）——没有锚点的预测事后无法对账。锚点周期默认 m15（观望也是——观望是 15 分钟级别看不出方向的陈述，不要因为盯着 5 分钟 K 线就锚在 m5）；只有纯超短的抢单判断才锚 m5，波段级陈述才锚 h1。时间对齐到该周期的 K 线边界（m15 → :00/:15/:30/:45）。",
   "- entry_plan：只在 long / short 时给出，入场 entry、止损 stop、目标 target1（必填，价格或百分比皆可）/ target2。止损必须依托具体结构（摆动点外沿、123 结构的①、区间边界），在 rationale 里写明是哪个结构；做多止损在入场下方、目标在上方，做空相反。T1 口径盈亏比不足 1:1 的计划不要提交——换结构重做或转 neutral；1:1 到 2:1 之间允许，但必须在 comment 里明说赔率偏薄。",
+  "- entry_plan 必须给出结构化触发字段 entry_kind + trigger（供实盘挂单/自动执行读取，不能只写在文字里）：entry 是挂单/回踩目标价，trigger 是\"确认成立\"价。retest（回踩型）= entry 是回踩目标，trigger 是回踩后收盘\"重新站上\"的确认位（做多 trigger 高于 entry、做空相反）；breakout（突破型）= trigger 是突破触发位（做多在上、做空在下），entry 可与 trigger 接近；market（立即市价）= 不需要 trigger。做多要求 stop < entry 且 trigger 在 stop 的盈利侧（trigger > stop），做空镜像。",
   "- neutral（观望）不要提交 entry_plan——观望就是现在没有可执行的入场/止损/目标。但必须在 range_plan 里给出箱体下沿 low / 上沿 high（观望 = 预判价格守在这个区间内，事后按守住/破位对账），两侧的条件应对写进 long_tactic / short_tactic。",
   "- scenarios：2 到 4 个情景（通常是上破 / 震荡 / 下破三个，按真实结构给，不要硬凑数量），probability 用 0–100 的百分数，合计约为 100。",
   "- comment：一句话中文白话结论，会作为点评写入。若快照里持仓不为空，comment 必须包含对现有持仓的处置（加 / 减 / 持 / 清）并对照成本价说明理由。",
   "- 不要给仓位建议（股数/金额）——自动重估拿不到账户资金数据，仓位由人工流程决定。",
   "若快照里没有已归档预测，说明这是该标的的首次分析而非重估，照常完成全部流程并给出完整结论。",
-  "全程中文白话，只做美股，不要臆造数据，拿不到就说明。",
+  "全程中文白话，只做美股或 Binance USD-M 永续，不要臆造数据，拿不到就说明。",
 ].join("\n");
 
 const anchorSchema = Type.Object({
@@ -53,6 +55,14 @@ const anchorSchema = Type.Object({
 const entryPlanSchema = Type.Object({
   entry: Type.Number(),
   stop: Type.Number(),
+  entry_kind: Type.Optional(
+    Type.Union([Type.Literal("retest"), Type.Literal("breakout"), Type.Literal("market")], {
+      description: "入场类型：retest 回踩确认 / breakout 突破触发 / market 立即市价",
+    }),
+  ),
+  trigger: Type.Optional(
+    Type.Number({ description: "触发价/确认价：retest=回踩后重新站上的确认位；breakout=突破触发位；market 不需要" }),
+  ),
   target1: Type.Optional(Type.Number()),
   target2: Type.Optional(Type.Number()),
   target1_pct: Type.Optional(Type.Number()),
@@ -135,6 +145,25 @@ export function validatePrediction(params: PredictionParams): string[] {
     const risk = direction === "long" ? entry - stop : stop - entry;
     if (risk <= 0) {
       issues.push(direction === "long" ? "做多止损必须低于入场价" : "做空止损必须高于入场价");
+    }
+    if (plan.trigger != null && Number.isFinite(plan.trigger)) {
+      const trig = plan.trigger;
+      const onProfitSide = direction === "long" ? trig > stop : trig < stop;
+      if (!onProfitSide) {
+        issues.push(direction === "long" ? "触发价 trigger 必须高于止损" : "触发价 trigger 必须低于止损");
+      }
+      if (plan.entry_kind === "retest") {
+        const reclaimSide = direction === "long" ? trig >= entry : trig <= entry;
+        if (!reclaimSide) {
+          issues.push(
+            direction === "long"
+              ? "回踩型 retest：触发价 trigger（重新站上位）应不低于入场价 entry（回踩目标）"
+              : "回踩型 retest：触发价 trigger（重新跌破位）应不高于入场价 entry（回踩目标）",
+          );
+        }
+      }
+    } else if (plan.entry_kind === "retest" || plan.entry_kind === "breakout") {
+      issues.push("entry_kind 为 retest / breakout 时必须给出触发价 trigger");
     }
     const t1 = resolveTarget(entry, direction, plan.target1, plan.target1_pct);
     const t2 = resolveTarget(entry, direction, plan.target2, plan.target2_pct);
@@ -310,8 +339,8 @@ export async function executeAnalystRun(symbol: string, deps: AnalystDeps): Prom
       symbol,
       {
         buildReassessPack: deps.buildReassessPack ?? defaultBuildReassessPack,
-        fetchNews: deps.fetchNews ?? ((symbol) => getProvider().getNews(symbol)),
-        fetchKline: deps.fetchKline ?? ((symbol, period, count) => getProvider().getKline(symbol, period, count)),
+        fetchNews: deps.fetchNews ?? ((symbol) => getProvider(symbol).getNews(symbol)),
+        fetchKline: deps.fetchKline ?? ((symbol, period, count) => getProvider(symbol).getKline(symbol, period, count)),
         createChart: deps.createChart ?? defaultCreateChart,
         appendComment: append,
       },

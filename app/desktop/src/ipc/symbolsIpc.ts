@@ -7,6 +7,12 @@ export class SymbolsIpc extends IpcService implements WrapEnvelope<SymbolsApi> {
   static readonly groupName = "symbols";
 
   @IpcMethod()
+  validate(input: Parameters<SymbolsApi["validate"]>[0]) { return toEnvelope("symbols.validate", () => symbolsService.validate(input)); }
+
+  @IpcMethod()
+  derivatives(input: Parameters<SymbolsApi["derivatives"]>[0]) { return toEnvelope("symbols.derivatives", () => symbolsService.derivatives(input)); }
+
+  @IpcMethod()
   flow(input: Parameters<SymbolsApi["flow"]>[0]) {
     return toEnvelope("symbols.flow", () => symbolsService.flow(input));
   }
@@ -54,6 +60,16 @@ export class SymbolsIpc extends IpcService implements WrapEnvelope<SymbolsApi> {
   @IpcMethod()
   reassess(input: Parameters<SymbolsApi["reassess"]>[0]) {
     return toEnvelope("symbols.reassess", () => symbolsService.reassess(input));
+  }
+
+  @IpcMethod()
+  binanceTopAnalysisStart() {
+    return toEnvelope("symbols.binanceTopAnalysisStart", () => symbolsService.binanceTopAnalysisStart());
+  }
+
+  @IpcMethod()
+  binanceTopAnalysisStatus() {
+    return toEnvelope("symbols.binanceTopAnalysisStatus", () => symbolsService.binanceTopAnalysisStatus());
   }
 
   @IpcMethod()

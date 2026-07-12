@@ -3,6 +3,7 @@ import { buildCockpitPosition } from "../services/cockpit/position.js";
 import { entryPlanFromDoc, latestIntradayDoc, type EntryPlan } from "../services/cockpit/entryPlan.js";
 import { getLongbridgeStream } from "../services/marketdata/longbridgeStream.js";
 import { getProvider } from "../services/marketdata/registry.js";
+import { isBinanceSymbol } from "../services/symbol.utils.js";
 import type { RawPosition } from "../services/marketdata/types.js";
 import { computeRelativeVolume } from "../services/relvol.js";
 import { createEmitter, emitData, emitStatus, replay } from "./emitter.js";
@@ -25,6 +26,7 @@ interface State {
   slowTimer: ReturnType<typeof setInterval> | null;
   pushTimer: ReturnType<typeof setTimeout> | null;
   refreshing: Promise<void> | null;
+  last: number | null;
 }
 
 const states = new Map<string, State>();
@@ -41,6 +43,7 @@ export function buildPositionPayload(
 }
 
 function pushLatest(state: State, symbol: string): void {
+  if (state.last !== null) { emitData(state.emitter, buildPositionPayload(state.positions, symbol, state.last, state.plan, state.relvol)); return; }
   const quote = getLongbridgeStream().getSnapshot(symbol);
   if (!quote) return;
   emitData(state.emitter, buildPositionPayload(state.positions, symbol, quote.last, state.plan, state.relvol));
@@ -58,15 +61,17 @@ async function refresh(symbol: string, state: State): Promise<void> {
   if (state.refreshing) return state.refreshing;
   state.refreshing = (async () => {
     try {
-      const provider = getProvider();
-      const [positions, doc, bars] = await Promise.all([
+      const provider = getProvider(symbol);
+      const [positions, doc, bars, quotes] = await Promise.all([
         provider.getPositions?.() ?? Promise.resolve([]),
         latestIntradayDoc(symbol),
         provider.getKline(symbol, "15m", RELVOL_BARS).catch(() => null),
+        isBinanceSymbol(symbol) ? provider.getQuotes([symbol]) : Promise.resolve([]),
       ]);
       state.positions = positions;
       state.plan = entryPlanFromDoc(doc);
       state.relvol = bars ? computeRelativeVolume(bars) : state.relvol;
+      state.last = quotes.length ? Number(quotes[0].last) : state.last;
       emitStatus(state.emitter, false);
       pushLatest(state, symbol);
     } catch (err) {
@@ -91,16 +96,17 @@ export function subscribePosition(symbol: string, push: (envelope: string) => vo
       slowTimer: null,
       pushTimer: null,
       refreshing: null,
+      last: null,
     };
     states.set(symbol, state);
   }
   state.emitter.listeners.add(push);
 
   if (fresh) {
-    const retainPromise = getLongbridgeStream()
+    const retainPromise = isBinanceSymbol(symbol) ? Promise.resolve() : getLongbridgeStream()
       .retain([symbol])
       .catch((err) => console.warn("[ws-position] retain failed", err));
-    state.quoteUnsub = getLongbridgeStream().onUpdate((cell) => {
+    if (!isBinanceSymbol(symbol)) state.quoteUnsub = getLongbridgeStream().onUpdate((cell) => {
       if (cell.symbol === symbol) schedulePush(state as State, symbol);
     });
     state.slowTimer = setInterval(() => void refresh(symbol, state as State), SLOW_REFRESH_MS);
@@ -121,7 +127,7 @@ export function subscribePosition(symbol: string, push: (envelope: string) => vo
       if (s.slowTimer) clearInterval(s.slowTimer);
       if (s.pushTimer) clearTimeout(s.pushTimer);
       states.delete(symbol);
-      void getLongbridgeStream()
+      if (!isBinanceSymbol(symbol)) void getLongbridgeStream()
         .release([symbol])
         .catch(() => {});
     }

@@ -5,6 +5,7 @@ import { client } from "../../client";
 import { navigate } from "../../router";
 import { Button, Card, ErrorBox, SectionTitle } from "../../ui";
 import { useTitle } from "../../useTitle";
+import { BinanceAccountCard } from "./BinanceAccountCard";
 import { LongbridgeSection } from "./LongbridgeSection";
 import { ProviderCredentialsSection } from "./ProviderCredentialsSection";
 import { RoleModelsCard } from "./RoleModelsCard";
@@ -82,6 +83,7 @@ function SettingsWorkspace({
             lobehubCreditsError={lobehubCreditsError}
           />
         </Card>
+        <BinanceAccountCard />
       </div>
     </>
   );

@@ -2,9 +2,11 @@ import { ClientError } from "../errors.js";
 
 const SYMBOL_RE = /^[A-Z0-9.]+$/;
 const NOTE_NAME_RE = /^[A-Z0-9._-]+$/;
+export function isBinanceSymbol(symbol: string): boolean { return !symbol.includes(".") && /^[A-Z0-9]+USDT$/i.test(symbol); }
 
 export function normalizeSymbol(raw: string): string {
   let sym = raw.trim().toUpperCase();
+  if (isBinanceSymbol(sym)) return sym;
   if (!sym.includes(".")) sym += ".US";
   if (!SYMBOL_RE.test(sym)) {
     throw new ClientError(`invalid symbol: ${raw}`, "e.g. MU or MU.US");

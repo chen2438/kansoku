@@ -2,6 +2,7 @@
   "name": "kansoku",
   "version": "0.0.0",
   "private": true,
+  "packageManager": "pnpm@11.10.0",
   "description": "Personal US market observatory with trading records, agent skills, and realtime charts",
   "scripts": {
     "dev": "cd app && pnpm dev",

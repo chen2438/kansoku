@@ -650,9 +650,23 @@ a.zone-item:hover { text-decoration: none; background: var(--bg-hover); }
 .home-page .quickbar-recent { font-size: var(--fs-md); }
 
 .quickbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0 20px; }
+.quickbar-entry { position: relative; align-self: flex-start; padding-bottom: 18px; }
 .quickbar-input { width: 170px; }
+.quickbar-input[aria-invalid="true"] { border-color: var(--down); }
+.quickbar-error { position: absolute; left: 0; top: 34px; width: 260px; color: var(--down); font-size: var(--fs-sm); line-height: 1.2; }
 .quickbar-recent { font-size: var(--fs-base); color: var(--text-muted); display: flex; gap: 8px; align-items: center; }
 .quickbar-recent a { color: var(--text-secondary); }
+.binance-batch { border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); padding: 10px 0; margin: 8px 0 12px; }
+.binance-batch-head { display: flex; align-items: center; gap: 12px; min-height: 32px; }
+.binance-batch-head .btn { display: inline-flex; align-items: center; gap: 7px; }
+.binance-batch-summary { color: var(--text-muted); font-size: var(--fs-sm); }
+.binance-batch-items { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 5px 12px; margin-top: 9px; }
+.binance-batch-item { display: flex; justify-content: space-between; gap: 8px; min-width: 0; color: var(--text-muted); font-size: var(--fs-sm); line-height: 24px; border-bottom: 1px solid var(--border); }
+.binance-batch-item span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); }
+.binance-batch-item.is-running span:last-child { color: var(--accent); }
+.binance-batch-item.is-completed span:last-child { color: var(--up); }
+.binance-batch-item.is-failed span:last-child { color: var(--down); }
+.symbol-source { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 8px 0 20px; color: var(--text-secondary); font-size: var(--fs-base); }
 
 .reassess-action { margin-left: auto; }
 

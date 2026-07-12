@@ -1,4 +1,5 @@
 import { AnnotationsIpc } from "./annotationsIpc.js";
+import { BinanceAccountIpc } from "./binanceAccountIpc.js";
 import { ChartsIpc } from "./chartsIpc.js";
 import { ChatIpc } from "./chatIpc.js";
 import { CredentialsIpc } from "./credentialsIpc.js";
@@ -20,4 +21,5 @@ export const ipcServiceClasses = [
   CredentialsIpc,
   HealthIpc,
   LobeHubIpc,
+  BinanceAccountIpc,
 ] as const;

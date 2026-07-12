@@ -6,9 +6,11 @@ export default defineConfig([
     outDir: "dist-main",
     format: "esm",
     platform: "node",
+    // pi-ai loads OAuth implementations through variable relative imports;
+    // bundling relocates the loader without copying those runtime modules.
     deps: {
       alwaysBundle: ["electron-window-state"],
-      neverBundle: ["electron", "better-sqlite3"],
+      neverBundle: ["electron", "better-sqlite3", "longbridge", "@earendil-works/pi-ai"],
     },
     dts: false,
     clean: true,

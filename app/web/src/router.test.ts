@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { __setActiveRouteStore, createMemoryRouteStore, navigate } from "./router.js";
+import { __setActiveRouteStore, createMemoryRouteStore, navigate, routePath } from "./router.js";
 
 afterEach(() => {
   __setActiveRouteStore(null);
@@ -44,6 +44,12 @@ describe("createMemoryRouteStore", () => {
     unsubscribe();
     store.push("/a");
     expect(cb).not.toHaveBeenCalled();
+  });
+});
+
+describe("routePath", () => {
+  it("removes analysis query parameters before route matching", () => {
+    expect(routePath("/symbol/ETHUSDT?analysis=2026-07-11-ethusdt-intraday")).toBe("/symbol/ETHUSDT");
   });
 });
 

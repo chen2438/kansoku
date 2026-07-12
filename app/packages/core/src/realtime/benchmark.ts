@@ -2,6 +2,7 @@ import { buildBenchmark } from "../services/cockpit/benchmark.js";
 import { toTs } from "../services/indicators.js";
 import { getLongbridgeStream } from "../services/marketdata/longbridgeStream.js";
 import { getProvider } from "../services/marketdata/registry.js";
+import { isBinanceSymbol } from "../services/symbol.utils.js";
 import { classifySession } from "../services/session.js";
 import { createEmitter, emitData, emitStatus, replay } from "./emitter.js";
 
@@ -24,8 +25,8 @@ async function refresh(symbol: string, state: State): Promise<void> {
   state.refreshing = (async () => {
     try {
       const { symbols } = state;
-      const barsList = await Promise.all(symbols.map((s) => getProvider().getKline(s, "5m", BAR_COUNT)));
-      const regularBars = barsList.map((bars) => bars.filter((b) => classifySession(toTs(b.time)) === "regular"));
+      const barsList = await Promise.all(symbols.map((s) => getProvider(s).getKline(s, "5m", BAR_COUNT)));
+      const regularBars = isBinanceSymbol(symbol) ? barsList : barsList.map((bars) => bars.filter((b) => classifySession(toTs(b.time)) === "regular"));
       const data = buildBenchmark(symbols.map((s, i) => ({ symbol: s, bars: regularBars[i] })));
       emitStatus(state.emitter, false);
       emitData(state.emitter, data);
@@ -50,13 +51,19 @@ export function subscribeBenchmark(symbol: string, push: (envelope: string) => v
   let state = states.get(symbol);
   const fresh = !state;
   if (!state) {
-    const symbols = [symbol, ...BENCHMARK_SYMBOLS.filter((s) => s !== symbol)];
+    const base = isBinanceSymbol(symbol) ? ["BTCUSDT", "ETHUSDT"] : BENCHMARK_SYMBOLS;
+    const symbols = [symbol, ...base.filter((s) => s !== symbol)];
     state = { emitter: createEmitter(), symbols, quoteUnsub: null, timer: null, refreshing: null };
     states.set(symbol, state);
   }
   state.emitter.listeners.add(push);
 
   if (fresh) {
+    if (isBinanceSymbol(symbol)) {
+      state.timer = setInterval(() => void refresh(symbol, state as State), THROTTLE_MS);
+      void refresh(symbol, state);
+      return () => unsubscribeBenchmark(symbol, push);
+    }
     void getLongbridgeStream()
       .retain(state.symbols)
       .catch((err) => console.warn("[ws-benchmark] retain failed", err));
@@ -68,17 +75,13 @@ export function subscribeBenchmark(symbol: string, push: (envelope: string) => v
     replay(state.emitter, push);
   }
 
-  return () => {
-    const s = states.get(symbol);
-    if (!s) return;
-    s.emitter.listeners.delete(push);
-    if (s.emitter.listeners.size === 0) {
-      s.quoteUnsub?.();
-      if (s.timer) clearTimeout(s.timer);
-      states.delete(symbol);
-      void getLongbridgeStream()
-        .release(s.symbols)
-        .catch(() => {});
-    }
-  };
+  return () => unsubscribeBenchmark(symbol, push);
+}
+
+function unsubscribeBenchmark(symbol: string, push: (envelope: string) => void): void {
+  const state = states.get(symbol); if (!state) return;
+  state.emitter.listeners.delete(push);
+  if (state.emitter.listeners.size) return;
+  state.quoteUnsub?.(); if (state.timer) clearInterval(state.timer); states.delete(symbol);
+  if (!isBinanceSymbol(symbol)) void getLongbridgeStream().release(state.symbols).catch(() => {});
 }

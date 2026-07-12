@@ -93,7 +93,7 @@ const ENTRY_STATUS_NOTES: Record<Exclude<EntryPlanStatus, "waiting">, string> = 
 };
 
 export function resolveEntryPlanStatus(
-  plan: Pick<IntradayEntryPlan, "entry" | "stop">,
+  plan: Pick<IntradayEntryPlan, "entry" | "stop" | "trigger" | "entry_kind">,
   direction: "long" | "short" | "neutral",
   anchorTs: number | null,
   candles: { time: number; high: number; low: number; close: number }[],
@@ -106,12 +106,33 @@ export function resolveEntryPlanStatus(
   const hitsStop = (c: { low: number; high: number }) =>
     direction === "long" ? c.low <= plan.stop : c.high >= plan.stop;
 
+  // trigger 判定：仅当给了有限的 trigger 且是 retest/breakout 时启用"收盘确认"逻辑；
+  // market 立即触发；其余（缺 trigger 或无 entry_kind）回退到"碰入场价即触发"的旧逻辑。
+  const trigger = Number.isFinite(Number(plan.trigger)) ? Number(plan.trigger) : null;
+  const kind = plan.entry_kind ?? null;
+  const useTrigger = trigger !== null && (kind === "retest" || kind === "breakout");
+  const reclaims = (c: { close: number }) => (direction === "long" ? c.close >= trigger! : c.close <= trigger!);
+
   let triggered = false;
+  let retestTouched = false;
   for (const c of candles) {
     if (c.time < anchorTs) continue;
     if (!triggered) {
-      if (touchesEntry(c)) triggered = true;
-      else if (towardStop(c)) return { status: "invalidated", note: ENTRY_STATUS_NOTES.invalidated };
+      if (kind === "market") {
+        triggered = true;
+      } else if (useTrigger && kind === "breakout") {
+        if (reclaims(c)) triggered = true;
+        else if (towardStop(c)) return { status: "invalidated", note: ENTRY_STATUS_NOTES.invalidated };
+      } else if (useTrigger && kind === "retest") {
+        // 回踩型：先触及回踩区（entry），再收盘"重新站上" trigger 才算确认；期间奔止损即失效。
+        if (!retestTouched && touchesEntry(c)) retestTouched = true;
+        if (retestTouched && reclaims(c)) triggered = true;
+        else if (towardStop(c)) return { status: "invalidated", note: ENTRY_STATUS_NOTES.invalidated };
+      } else {
+        // 回退旧逻辑：碰入场价即触发
+        if (touchesEntry(c)) triggered = true;
+        else if (towardStop(c)) return { status: "invalidated", note: ENTRY_STATUS_NOTES.invalidated };
+      }
     } else if (hitsStop(c)) {
       return { status: "stopped", note: ENTRY_STATUS_NOTES.stopped };
     }
@@ -633,6 +654,8 @@ export function computeIntradayEntryPlan(
 ): IntradayEntryPlan {
   const entry = Number(raw.entry);
   const stop = Number(raw.stop);
+  const trigger = Number.isFinite(Number(raw.trigger)) ? Number(raw.trigger) : null;
+  const entryKind = raw.entry_kind ?? null;
   const targetFromPct = (pct: number) => pyRound(direction === "short" ? entry * (1 - pct / 100) : entry * (1 + pct / 100), 4);
   const pctFromTarget = (target: number) => {
     if (!entry) return 0;
@@ -693,6 +716,8 @@ export function computeIntradayEntryPlan(
     entry_zone: entryZone,
     target_contexts: targetContexts,
     price_zones: dedupeZones(priceZones),
+    trigger,
+    entry_kind: entryKind,
   };
 }
 
@@ -930,7 +955,7 @@ export function buildIntraday(input: IntradayInput): { built: IntradayBuilt; met
       autoBeichi: tf.autoBeichi,
       pattern123: tf.pattern123,
       fvgZones: tf.fvgZones,
-      offSession: offSessionSegments(tf.candles.map((c) => c.time)),
+      offSession: /^[A-Z0-9]+USDT$/i.test(symbol) ? [] : offSessionSegments(tf.candles.map((c) => c.time)),
     };
   }
 

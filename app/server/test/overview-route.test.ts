@@ -10,6 +10,13 @@ const provider = vi.hoisted(() => ({
   getNews: vi.fn(),
 }));
 
+const binanceProvider = vi.hoisted(() => ({
+  name: "binance-mock",
+  capabilities: new Set<string>(),
+  getKline: vi.fn(),
+  getQuotes: vi.fn(),
+}));
+
 const store = vi.hoisted(() => ({
   listCharts: vi.fn(),
   loadChart: vi.fn(),
@@ -26,7 +33,9 @@ const usage = vi.hoisted(() => ({
   summarizeUsage: vi.fn(),
 }));
 
-vi.mock("../../packages/core/src/services/marketdata/registry.js", () => ({ getProvider: () => provider }));
+vi.mock("../../packages/core/src/services/marketdata/registry.js", () => ({
+  getProvider: (symbol?: string) => (symbol && !symbol.includes(".") ? binanceProvider : provider),
+}));
 vi.mock("../../packages/core/src/services/store.js", () => store);
 vi.mock("../../packages/core/src/ai/comments.js", () => comments);
 vi.mock("../../packages/core/src/ai/usageStore.js", () => usage);
@@ -81,6 +90,8 @@ beforeEach(() => {
   resetOverviewCacheForTests();
   provider.getKline.mockReset();
   provider.getQuotes.mockReset();
+  binanceProvider.getKline.mockReset();
+  binanceProvider.getQuotes.mockReset();
   store.listCharts.mockReset();
   store.loadChart.mockReset();
   comments.listComments.mockReset();
@@ -149,6 +160,34 @@ describe("GET /recap", () => {
     expect(row.outcome.status).toBe("hit_target");
     expect(body.data.alerts).toHaveLength(1);
     expect(body.data.alerts[0].level).toBe("alert");
+  });
+
+  it("uses each symbol's provider for mixed stock and futures recaps", async () => {
+    const futureMeta = makeMeta({ id: `${easternDate()}-ethusdt-intraday`, symbol: "ETHUSDT" });
+    store.listCharts.mockResolvedValue([makeMeta(), futureMeta]);
+    store.loadChart.mockImplementation((id: string) =>
+      Promise.resolve(
+        id.includes("ethusdt")
+          ? makeDoc({ id, symbol: "ETHUSDT", input: { symbol: "ETHUSDT", prediction: null } })
+          : makeDoc(),
+      ),
+    );
+    provider.getQuotes.mockResolvedValue([
+      { symbol: "MU.US", last: "110", prev_close: "108", change_percentage: "1.8" },
+    ]);
+    binanceProvider.getQuotes.mockResolvedValue([
+      { symbol: "ETHUSDT", last: "3100", prev_close: "3000", change_percentage: "3.33" },
+    ]);
+    provider.getKline.mockResolvedValue([]);
+    comments.listComments.mockResolvedValue([]);
+
+    const res = await tsukiRequest(`${BASE}/recap`);
+    expect(res.status).toBe(200);
+    const rows = (await res.json()).data.settlements;
+    expect(rows.find((row: { symbol: string }) => row.symbol === "MU.US").day_pct).toBeCloseTo(1.8);
+    expect(rows.find((row: { symbol: string }) => row.symbol === "ETHUSDT").day_pct).toBeCloseTo(3.33);
+    expect(provider.getQuotes).toHaveBeenCalledWith(["MU.US"]);
+    expect(binanceProvider.getQuotes).toHaveBeenCalledWith(["ETHUSDT"]);
   });
 
   it("serves the cached recap within the TTL without re-hitting the provider", async () => {

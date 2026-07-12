@@ -2,6 +2,7 @@ import { promises as fs } from "node:fs";
 import { join } from "node:path";
 import type { IntradayPrediction, RawBar, SymbolAnalysisRow } from "../../../../../shared/types.js";
 import { runAnalyst } from "../../ai/analyst.js";
+import { binanceTopAnalysisState, startBinanceTopAnalysis } from "../../ai/binanceBatch.js";
 import { listCommentDates, listComments } from "../../ai/comments.js";
 import { deepDiveState, startDeepDive } from "../../ai/deepDive.js";
 import { aiConfig } from "../../ai/models.js";
@@ -18,12 +19,13 @@ import { getResolvedOutcomes, saveResolvedOutcome } from "../../services/cockpit
 import { buildCockpitPosition } from "../../services/cockpit/position.js";
 import { toTs } from "../../services/indicators.js";
 import { getProvider } from "../../services/marketdata/registry.js";
+import { getBinanceInstrument } from "../../services/marketdata/binance.js";
 import type { RawPosition } from "../../services/marketdata/types.js";
 import { computeRelativeVolume } from "../../services/relvol.js";
 import { classifySession, easternDate } from "../../services/session.js";
 import { predictionStale } from "../../services/staleness.js";
 import { listCharts, loadChart } from "../../services/store.js";
-import { noteFileName, normalizeSymbol } from "../../services/symbol.utils.js";
+import { isBinanceSymbol, noteFileName, normalizeSymbol } from "../../services/symbol.utils.js";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const JOURNAL_FILE_RE = /^(\d{4}-\d{2}-\d{2})-([\w-]+)\.md$/;
@@ -31,9 +33,30 @@ const JOURNAL_NAME_RE = /^\d{4}-\d{2}-\d{2}-[\w-]+\.md$/;
 const BENCHMARK_SYMBOLS = ["SMH.US", "QQQ.US"];
 
 export const symbolsService: SymbolsApi = {
+  async validate(input) {
+    const sym = normalizeSymbol(input.sym);
+    if (isBinanceSymbol(sym)) {
+      const info = await getBinanceInstrument(sym);
+      if (info.status !== "TRADING") throw new ClientError(`${sym} is not currently trading`, `Binance status: ${info.status}`, 404);
+      return { symbol: sym, provider: "binance-usdm", source: "Binance USD-M Futures", marketType: info.contractType === "TRADIFI_PERPETUAL" ? "TradFi 永续合约" : "加密永续合约", contractType: info.contractType, underlyingType: info.underlyingType };
+    }
+    try {
+      const quotes = await getProvider(sym).getQuotes([sym]);
+      if (!quotes.length || !Number.isFinite(Number(quotes[0].last))) throw new Error("empty quote");
+    } catch { throw new ClientError(`未找到标的 ${sym}`, "请检查代码，或确认 Longbridge 当前支持该市场。", 404); }
+    const suffix = sym.split(".").at(-1);
+    return { symbol: sym, provider: "longbridge", source: "Longbridge", marketType: suffix === "US" ? "美股" : suffix === "HK" ? "港股" : suffix === "SH" || suffix === "SZ" ? "A 股" : "证券" };
+  },
+
+  async derivatives(input) {
+    const sym = normalizeSymbol(input.sym); const provider = getProvider(sym);
+    if (!provider.getDerivativesSnapshot) throw new ClientError(`${sym} is not a derivatives symbol`, "Use a Binance USD-M symbol.", 400);
+    return provider.getDerivativesSnapshot(sym);
+  },
+
   async flow(input) {
     const sym = normalizeSymbol(input.sym);
-    const provider = getProvider();
+    const provider = getProvider(sym);
     if (!provider.getFlow) return null;
     const [flowRes, distRes] = await Promise.allSettled([
       provider.getFlow(sym),
@@ -46,15 +69,16 @@ export const symbolsService: SymbolsApi = {
 
   async benchmark(input) {
     const sym = normalizeSymbol(input.sym);
-    const symbols = [sym, ...BENCHMARK_SYMBOLS.filter((s) => s !== sym)];
-    const barsList = await Promise.all(symbols.map((s) => getProvider().getKline(s, "5m", 100)));
-    const regularBars = barsList.map((bars) => bars.filter((b) => classifySession(toTs(b.time)) === "regular"));
+    const base = isBinanceSymbol(sym) ? ["BTCUSDT", "ETHUSDT"] : BENCHMARK_SYMBOLS;
+    const symbols = [sym, ...base.filter((s) => s !== sym)];
+    const barsList = await Promise.all(symbols.map((s) => getProvider(s).getKline(s, "5m", 100)));
+    const regularBars = isBinanceSymbol(sym) ? barsList : barsList.map((bars) => bars.filter((b) => classifySession(toTs(b.time)) === "regular"));
     return buildBenchmark(symbols.map((s, i) => ({ symbol: s, bars: regularBars[i] })));
   },
 
   async position(input) {
     const sym = normalizeSymbol(input.sym);
-    const provider = getProvider();
+    const provider = getProvider(sym);
     const [positions, quotes] = await Promise.all([
       provider.getPositions?.() ?? Promise.resolve([] as RawPosition[]),
       provider.getQuotes([sym]),
@@ -75,7 +99,7 @@ export const symbolsService: SymbolsApi = {
     let bars: RawBar[] | null = null;
     if (metas.some((m) => !cached.has(m.id))) {
       try {
-        bars = await getProvider().getKline(sym, "15m", 300);
+        bars = await getProvider(sym).getKline(sym, "15m", 300);
       } catch {
         bars = null;
       }
@@ -103,7 +127,7 @@ export const symbolsService: SymbolsApi = {
 
   async relvol(input) {
     const sym = normalizeSymbol(input.sym);
-    const bars = await getProvider().getKline(sym, "15m", 500);
+    const bars = await getProvider(sym).getKline(sym, "15m", 500);
     return computeRelativeVolume(bars);
   },
 
@@ -164,6 +188,15 @@ export const symbolsService: SymbolsApi = {
     const result = runAnalyst({ symbol: sym, origin: "manual", deps: { model } });
     void result.done?.catch(() => {});
     return { started: result.started, ...(result.reason ? { reason: result.reason } : {}) };
+  },
+
+  async binanceTopAnalysisStart() {
+    if (!aiConfig().analystModel) throw new ClientError("analyst layer disabled", "请先在设置中配置分析模型。", 503);
+    return startBinanceTopAnalysis();
+  },
+
+  async binanceTopAnalysisStatus() {
+    return binanceTopAnalysisState();
   },
 
   async note(input) {

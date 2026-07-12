@@ -49,6 +49,7 @@ describe("subscribeChart candlestick-push wiring", () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-06T15:00:00Z"));
     callbacksByPeriod.clear();
     unsubSpies.clear();
     store.loadChart.mockReset().mockResolvedValue(makeDoc());
@@ -155,9 +156,10 @@ describe("subscribeChart candlestick-push wiring", () => {
     await vi.advanceTimersByTimeAsync(1_500);
 
     const [, input] = build.rebuild.mock.calls[0];
-    expect(input.timeframes.m5).toHaveLength(2);
-    expect(input.timeframes.m5[0].time).toBe(new Date(5_000).toISOString());
-    expect(input.timeframes.m5[1].time).toBe(new Date(6_000).toISOString());
+    expect(input.timeframes.m5).toHaveLength(3);
+    expect(input.timeframes.m5[0].time).toBe(new Date(1_000).toISOString());
+    expect(input.timeframes.m5[1].time).toBe(new Date(5_000).toISOString());
+    expect(input.timeframes.m5[2].time).toBe(new Date(6_000).toISOString());
     unsub();
   });
 

@@ -40,7 +40,7 @@ function cacheRecap(date: string, data: OverviewRecap): void {
 }
 
 async function computeHistoricalDayPct(symbol: string, date: string): Promise<number | null> {
-  const bars = await getProvider()
+  const bars = await getProvider(symbol)
     .getKline(symbol, "day", DAILY_BARS)
     .catch(() => null);
   if (!bars) return null;
@@ -66,17 +66,18 @@ async function buildRecap(date: string): Promise<OverviewRecap> {
   const latestMetas = [...bySymbol.values()];
   const [quoteBySymbol, dayPctBySymbol, docs, commentsList, cached] = await Promise.all([
     isToday
-      ? getProvider()
-          .getQuotes(symbols)
-          .then((quotesRes) => {
-            const map = new Map<string, ReturnType<typeof normalizeQuote>>();
-            for (const q of quotesRes) {
-              const cell = normalizeQuote(q, nowMs);
-              map.set(cell.symbol, cell);
-            }
-            return map;
-          })
-          .catch(() => new Map<string, ReturnType<typeof normalizeQuote>>())
+      ? Promise.all(
+          symbols.map(async (symbol) => {
+            const quotes = await getProvider(symbol)
+              .getQuotes([symbol])
+              .catch(() => []);
+            return quotes[0] ? normalizeQuote(quotes[0], nowMs) : null;
+          }),
+        ).then((cells) => {
+          const map = new Map<string, ReturnType<typeof normalizeQuote>>();
+          for (const cell of cells) if (cell) map.set(cell.symbol, cell);
+          return map;
+        })
       : Promise.resolve(new Map<string, ReturnType<typeof normalizeQuote>>()),
     isToday
       ? Promise.resolve(new Map<string, number | null>())
@@ -100,7 +101,7 @@ async function buildRecap(date: string): Promise<OverviewRecap> {
           : null;
       let outcome = attachRMultiple(cached.get(meta.id) ?? null, direction, plan);
       if (!outcome && direction && anchor) {
-        const bars = await getProvider()
+        const bars = await getProvider(meta.symbol!)
           .getKline(meta.symbol!, "15m", OUTCOME_BARS)
           .catch(() => null);
         outcome = bars ? judgeOutcome(direction, anchor, plan, bars, zoneFromPrediction(prediction)) : null;
@@ -178,7 +179,7 @@ export const overviewService: OverviewApi = {
     const barsBySymbol = new Map<string, RawBar[] | null>();
     await Promise.all(
       symbolsNeedingBars.map(async (symbol) => {
-        const bars = await getProvider()
+        const bars = await getProvider(symbol)
           .getKline(symbol, "15m", OUTCOME_BARS)
           .catch(() => null);
         barsBySymbol.set(symbol, bars);
