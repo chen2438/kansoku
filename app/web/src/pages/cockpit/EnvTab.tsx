@@ -1,7 +1,7 @@
 import { CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { BenchmarkSeries, CockpitPosition, RelativeVolume } from "../../../../shared/types";
 import { hhmm, tooltipContentStyle, tooltipLabelStyle, tooltipTime } from "../../charts/simple/theme";
-import { fmt, signed, upDown } from "../../format";
+import { priceStr, signed, upDown } from "../../format";
 import { seriesPalette, theme } from "../../theme";
 import { Num, SectionTitle } from "../../ui";
 
@@ -108,9 +108,9 @@ export function EnvTab({ position, positionError, benchmark, benchmarkError, rel
             <div className="k">持仓</div>
             <div className="v">{position.shares} sh</div>
             <div className="k">成本</div>
-            <div className="v">${fmt(position.cost)}</div>
+            <div className="v">${priceStr(position.cost)}</div>
             <div className="k">现价</div>
-            <div className="v">${fmt(position.last)}</div>
+            <div className="v">${priceStr(position.last)}</div>
             <div className="k">浮{position.unrealized >= 0 ? "盈" : "亏"}</div>
             <div className={`v ${upDown(position.unrealized)}`}>
               {signed(position.unrealized, 0)} ({signed(position.unrealizedPct)}%)

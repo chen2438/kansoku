@@ -3,7 +3,7 @@ import { Check } from "lucide-react";
 import type { OverviewBoard, OverviewRow } from "../../../../shared/types";
 import { errorMessage } from "../../api";
 import { client } from "../../client";
-import { fmt, signed } from "../../format";
+import { priceStr, signed } from "../../format";
 import { Badge, Button, Card, Dot, Empty, ErrorBox, MarketTime, Num } from "../../ui";
 import { directionTone } from "../../charts/intraday/directionLabels";
 
@@ -69,7 +69,7 @@ function SymbolCard({ row }: { row: OverviewRow }) {
         )}
         {row.last != null && (
           <span className="quote">
-            {fmt(row.last)}
+            {priceStr(row.last)}
             {row.pct != null && <>{" "}<Num value={row.pct} diff suffix="%" /></>}
           </span>
         )}
@@ -79,7 +79,7 @@ function SymbolCard({ row }: { row: OverviewRow }) {
       <div className="symbol-card-levels">
         <span>止损 {pctCell(row.stop_distance_pct)}</span>
         <span>目标1 {pctCell(row.target1_distance_pct)}</span>
-        {row.entry != null && <span>入场 {fmt(row.entry)}</span>}
+        {row.entry != null && <span>入场 {priceStr(row.entry)}</span>}
         <ReassessButton symbol={row.symbol} />
       </div>
       {comment && (

@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 import { ArrowRight } from "lucide-react";
 import { AUTO_SIGNAL_META, type DivergencePair, type IntradayPriceZone, type IntradayTargetContext, type Pattern123 } from "../../../../../shared/types";
-import { fmt } from "../../../format";
+import { priceStr } from "../../../format";
 import { theme } from "../../../theme";
 import { Badge, MarketTime } from "../../../ui";
 
@@ -32,14 +32,14 @@ export function Pattern123Item({ pat }: { pat: Pattern123 }) {
           </Badge>
         </div>
         <div className="check-val">
-          ① <BarTime value={pat.p1.time} /> ${fmt(pat.p1.price)} <ArrowRight className="icon" size={12} /> ② $
-          {fmt(pat.p2.price)} <ArrowRight className="icon" size={12} /> ③ <BarTime value={pat.p3.time} /> $
-          {fmt(pat.p3.price)}
+          ① <BarTime value={pat.p1.time} /> ${priceStr(pat.p1.price)} <ArrowRight className="icon" size={12} /> ② $
+          {priceStr(pat.p2.price)} <ArrowRight className="icon" size={12} /> ③ <BarTime value={pat.p3.time} /> $
+          {priceStr(pat.p3.price)}
         </div>
         <div className="check-val">{pat.implication}</div>
         {confirmed && pat.confirm && (
           <div className="check-val">
-            <BarTime value={pat.confirm.time} /> 收盘 ${fmt(pat.confirm.price)} 突破触发线 ${fmt(pat.trigger)}
+            <BarTime value={pat.confirm.time} /> 收盘 ${priceStr(pat.confirm.price)} 突破触发线 ${priceStr(pat.trigger)}
           </div>
         )}
       </div>
@@ -56,8 +56,8 @@ export function AutoSignalItem({ kindKey, pair }: { kindKey: string; pair: Diver
       <div>
         <div className="check-label">{meta.title}</div>
         <div className="check-val">
-          <BarTime value={pair.a.time} /> ${fmt(pair.a.price)} <ArrowRight className="icon" size={12} /> <BarTime value={pair.b.time} />{" "}
-          ${fmt(pair.b.price)}
+          <BarTime value={pair.a.time} /> ${priceStr(pair.a.price)} <ArrowRight className="icon" size={12} /> <BarTime value={pair.b.time} />{" "}
+          ${priceStr(pair.b.price)}
         </div>
         <div className="check-val">{meta.impact}</div>
       </div>
@@ -73,7 +73,7 @@ export function PriceZoneCard({ zone, compact = false }: { zone: IntradayPriceZo
       <div className="zone-head">
         <span className="zone-label">{zone.label}</span>
         <span className="zone-range">
-          {isBand ? `$${fmt(zone.low)} - $${fmt(zone.high)}` : `$${fmt(zone.low)}`}
+          {isBand ? `$${priceStr(zone.low)} - $${priceStr(zone.high)}` : `$${priceStr(zone.low)}`}
         </span>
       </div>
       <div className="zone-meta">
@@ -90,7 +90,7 @@ export function TargetContextCard({ target }: { target: IntradayTargetContext })
     <div className="target-context">
       <div className="target-head">
         <span>{target.label}</span>
-        <span>${fmt(target.price)}</span>
+        <span>${priceStr(target.price)}</span>
       </div>
       {target.zone && <PriceZoneCard zone={target.zone} compact />}
       {target.note && <div className="zone-meta md">{target.note}</div>}

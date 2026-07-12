@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 import { TriangleAlert } from "lucide-react";
 import type { IntradayBuilt, TimeframeKey } from "../../../../../shared/types";
-import { fmt, signed } from "../../../format";
+import { fmt, priceDecimals, priceStr, signed } from "../../../format";
 import { TF_LABELS } from "../IntradayDashboard";
 import { DIRECTION_COLOR, DIRECTION_LABEL } from "../directionLabels";
 import { AutoSignalItem, Pattern123Item, PriceZoneCard, TargetContextCard, TechRow } from "./predictionTabParts";
@@ -27,6 +27,8 @@ export function PredictionTab({ built, activeTf, predictionUpdatedAt, prediction
   const s = built.sidebar;
   const p = s.prediction;
   const ep = s.entryPlan;
+  const dp = priceDecimals(s.last);
+  const px = (x: number) => priceStr(x, dp);
   const scenarios = (p?.scenarios ?? []).map((sc) => {
     const raw = sc as unknown as Record<string, unknown>;
     const label =
@@ -72,7 +74,7 @@ export function PredictionTab({ built, activeTf, predictionUpdatedAt, prediction
           {p.anchor && (
             <div className="verdict-reason">
               预测点：{TF_LABELS[p.anchor.timeframe] ?? p.anchor.timeframe} ·{" "}
-              <MarketTime value={p.anchor.time} /> · ${fmt(Number(p.anchor.price))}
+              <MarketTime value={p.anchor.time} /> · ${px(Number(p.anchor.price))}
             </div>
           )}
         </div>
@@ -116,7 +118,7 @@ export function PredictionTab({ built, activeTf, predictionUpdatedAt, prediction
           <div className="zone-meta md" style={{ marginBottom: 6 }}>
             {rbp.low != null && rbp.high != null && (
               <>
-                预判区间 ${fmt(Number(rbp.low))} – ${fmt(Number(rbp.high))}
+                预判区间 ${px(Number(rbp.low))} – ${px(Number(rbp.high))}
                 {rbp.condition ? " · " : ""}
               </>
             )}
@@ -141,13 +143,13 @@ export function PredictionTab({ built, activeTf, predictionUpdatedAt, prediction
           )}
           <div className="grid2">
             <div className="k">入场</div>
-            <div className="v">${fmt(ep.entry)}</div>
+            <div className="v">${px(ep.entry)}</div>
             <div className="k">止损</div>
-            <div className="v down">${fmt(ep.stop)}</div>
+            <div className="v down">${px(ep.stop)}</div>
             <div className="k">目标1 ({signed(ep.target1_pct, 1)}%)</div>
-            <div className="v up">${fmt(ep.target1)}</div>
+            <div className="v up">${px(ep.target1)}</div>
             <div className="k">目标2 ({signed(ep.target2_pct, 1)}%)</div>
-            <div className="v up">${fmt(ep.target2)}</div>
+            <div className="v up">${px(ep.target2)}</div>
             <div className="k">R/R</div>
             <div className={`v ${rrTone(ep)}`}>
               {fmt(ep.rr)} : 1
@@ -205,7 +207,7 @@ export function PredictionTab({ built, activeTf, predictionUpdatedAt, prediction
                 <div className="check-label">{sig.label ?? ""}</div>
                 <div className="check-val">
                   {TF_LABELS[sig.timeframe] ?? sig.timeframe}
-                  {sig.price != null ? ` · $${fmt(sig.price)}` : ""}
+                  {sig.price != null ? ` · $${px(sig.price)}` : ""}
                 </div>
               </div>
             </div>

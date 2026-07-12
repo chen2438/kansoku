@@ -22,6 +22,7 @@ import { AnchorBgPrimitive } from "./anchorPrimitive";
 import { FvgPrimitive } from "./fvgPrimitive";
 import { SessionBgPrimitive } from "./sessionPrimitive";
 import { seriesPalette, theme } from "../../theme";
+import { priceDecimals, priceStr } from "../../format";
 
 export const EMA_COLORS = [theme.accent, theme.textPrimary, theme.textSecondary, theme.up, theme.down] as const;
 
@@ -60,8 +61,8 @@ const PUT_WALL_COLOR = "#39c5cf";
 
 const fmtOi = (oi: number) => (oi >= 1000 ? `${(oi / 1000).toFixed(1)}k` : String(oi));
 
-const zoneTitle = (z: IntradayPriceZone, edge?: "上沿" | "下沿") =>
-  `${z.label}${edge ? edge : ""} $${(edge === "上沿" ? z.high : z.low).toFixed(2)}`;
+const zoneTitle = (z: IntradayPriceZone, decimals: number, edge?: "上沿" | "下沿") =>
+  `${z.label}${edge ? edge : ""} $${priceStr(edge === "上沿" ? z.high : z.low, decimals)}`;
 
 const groupAllowed = (toggles: Record<IndicatorToggleKey, boolean>, group?: SeriesMarker["group"]) =>
   group === undefined || toggles[group as IndicatorToggleKey];
@@ -194,6 +195,9 @@ export function useIntradayCharts(
     });
     h.dynamic = [];
 
+    const decimals = priceDecimals(built.sidebar.last || d.candles.at(-1)?.close || 0);
+    h.candle.applyOptions({ priceFormat: { type: "price", precision: decimals, minMove: 1 / 10 ** decimals } });
+
     const timeline = d.candles.map((c) => c.time);
     const prevRange = h.main.timeScale().getVisibleLogicalRange();
     const wasAtRight = prevRange === null || prevRange.to >= barCountRef.current - 2;
@@ -242,26 +246,26 @@ export function useIntradayCharts(
     h.planLines.forEach((line) => h.candle.removePriceLine(line));
     h.planLines = [];
     if (toggles.levels && anchorHere) {
-      h.planLines.push(addPriceLine(h.candle, { price: anchorHere.price, color: theme.accent, lineWidth: 1, lineStyle: 2, title: `🎯 锚 $${anchorHere.price.toFixed(2)}` }));
+      h.planLines.push(addPriceLine(h.candle, { price: anchorHere.price, color: theme.accent, lineWidth: 1, lineStyle: 2, title: `🎯 锚 $${priceStr(anchorHere.price, decimals)}` }));
     }
     const ep = built.entryPlan;
     if (ep && toggles.levels) {
       const planDead = ep.entry_status === "invalidated" || ep.entry_status === "stopped";
       const deadColor = "#6e7681";
       const suffix = ep.entry_status ? (ENTRY_STATUS_SUFFIX[ep.entry_status] ?? "") : "";
-      h.planLines.push(addPriceLine(h.candle, { price: ep.entry, color: planDead ? deadColor : theme.accent, lineWidth: 2, lineStyle: planDead ? 2 : 0, title: `入场 $${ep.entry.toFixed(2)}${suffix}` }));
-      h.planLines.push(addPriceLine(h.candle, { price: ep.stop, color: planDead ? deadColor : theme.down, lineWidth: 2, lineStyle: 2, title: `止损 $${ep.stop.toFixed(2)}` }));
-      h.planLines.push(addPriceLine(h.candle, { price: ep.target1, color: planDead ? deadColor : theme.up, lineWidth: 1, lineStyle: 2, title: `T1 $${ep.target1.toFixed(2)}` }));
-      h.planLines.push(addPriceLine(h.candle, { price: ep.target2, color: planDead ? deadColor : seriesPalette[1], lineWidth: 1, lineStyle: 2, title: `T2 $${ep.target2.toFixed(2)}` }));
+      h.planLines.push(addPriceLine(h.candle, { price: ep.entry, color: planDead ? deadColor : theme.accent, lineWidth: 2, lineStyle: planDead ? 2 : 0, title: `入场 $${priceStr(ep.entry, decimals)}${suffix}` }));
+      h.planLines.push(addPriceLine(h.candle, { price: ep.stop, color: planDead ? deadColor : theme.down, lineWidth: 2, lineStyle: 2, title: `止损 $${priceStr(ep.stop, decimals)}` }));
+      h.planLines.push(addPriceLine(h.candle, { price: ep.target1, color: planDead ? deadColor : theme.up, lineWidth: 1, lineStyle: 2, title: `T1 $${priceStr(ep.target1, decimals)}` }));
+      h.planLines.push(addPriceLine(h.candle, { price: ep.target2, color: planDead ? deadColor : seriesPalette[1], lineWidth: 1, lineStyle: 2, title: `T2 $${priceStr(ep.target2, decimals)}` }));
       (ep.price_zones ?? [])
         .filter((z) => z.kind === "resistance")
         .forEach((z) => {
           const color = z.color ?? theme.textSecondary;
           if (Math.abs(z.high - z.low) < 0.0001) {
-            h.planLines.push(addPriceLine(h.candle, { price: z.low, color, lineWidth: 1, lineStyle: 2, title: zoneTitle(z) }));
+            h.planLines.push(addPriceLine(h.candle, { price: z.low, color, lineWidth: 1, lineStyle: 2, title: zoneTitle(z, decimals) }));
           } else {
-            h.planLines.push(addPriceLine(h.candle, { price: z.low, color, lineWidth: 1, lineStyle: 2, title: zoneTitle(z, "下沿") }));
-            h.planLines.push(addPriceLine(h.candle, { price: z.high, color, lineWidth: 1, lineStyle: 2, title: zoneTitle(z, "上沿") }));
+            h.planLines.push(addPriceLine(h.candle, { price: z.low, color, lineWidth: 1, lineStyle: 2, title: zoneTitle(z, decimals, "下沿") }));
+            h.planLines.push(addPriceLine(h.candle, { price: z.high, color, lineWidth: 1, lineStyle: 2, title: zoneTitle(z, decimals, "上沿") }));
           }
         });
     }
@@ -280,7 +284,7 @@ export function useIntradayCharts(
       for (const { price, title } of dayLevels) {
         if (price == null) continue;
         h.planLines.push(
-          addPriceLine(h.candle, { price, color: DAY_LEVEL_COLOR, lineWidth: 1, lineStyle: 1, title: `${title} $${price.toFixed(2)}` }),
+          addPriceLine(h.candle, { price, color: DAY_LEVEL_COLOR, lineWidth: 1, lineStyle: 1, title: `${title} $${priceStr(price, decimals)}` }),
         );
       }
     }
@@ -295,7 +299,7 @@ export function useIntradayCharts(
             color: call ? CALL_WALL_COLOR : PUT_WALL_COLOR,
             lineWidth: 1,
             lineStyle: 4,
-            title: `${call ? "C墙" : "P墙"} $${w.strike} (${fmtOi(call ? w.call_oi : w.put_oi)})`,
+            title: `${call ? "C墙" : "P墙"} $${priceStr(w.strike, decimals)} (${fmtOi(call ? w.call_oi : w.put_oi)})`,
           }),
         );
       }

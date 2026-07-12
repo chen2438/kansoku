@@ -10,6 +10,7 @@ import type {
 } from "lightweight-charts";
 import type { IntradayFvgZone } from "../../../../shared/types";
 import { theme } from "../../theme";
+import { priceStr } from "../../format";
 
 type DrawTarget = Parameters<ISeriesPrimitivePaneRenderer["draw"]>[0];
 
@@ -93,7 +94,7 @@ class FvgPaneView implements ISeriesPrimitivePaneView {
         yBottom: Math.max(yA, yB),
         fill: hexToRgba(base, FILL_ALPHA),
         stroke: hexToRgba(base, STROKE_ALPHA),
-        label: `$${((z.high + z.low) / 2).toFixed(2)}`,
+        label: `$${priceStr((z.high + z.low) / 2)}`,
       });
     }
   }
