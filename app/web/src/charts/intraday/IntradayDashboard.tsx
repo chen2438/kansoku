@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState, type ReactNode } from "react";
 import type { IntradayBuilt, TimeframeKey } from "../../../../shared/types";
-import { priceStr } from "../../format";
+import { isCryptoSymbol, priceDecimals, priceStr } from "../../format";
 import type { SidebarTab } from "../SidebarTabs";
 import { DrawingToolbar } from "../drawings/DrawingToolbar";
 import { useDrawings, type DrawingsHandle } from "../drawings/useDrawings";
@@ -130,7 +130,7 @@ export function IntradayDashboard({
               <span key={e.period}>
                 <span className="swatch" style={{ background: EMA_COLORS[i % EMA_COLORS.length] }} />
                 EMA{e.period}
-                {e.last !== null && ` $${priceStr(e.last)}`}
+                {e.last !== null && ` $${priceStr(e.last, priceDecimals(e.last, isCryptoSymbol(built.sidebar.symbol)))}`}
               </span>
             ))}
             <span>

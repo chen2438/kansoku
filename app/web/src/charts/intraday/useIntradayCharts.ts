@@ -22,7 +22,7 @@ import { AnchorBgPrimitive } from "./anchorPrimitive";
 import { FvgPrimitive } from "./fvgPrimitive";
 import { SessionBgPrimitive } from "./sessionPrimitive";
 import { seriesPalette, theme } from "../../theme";
-import { priceDecimals, priceStr } from "../../format";
+import { isCryptoSymbol, priceDecimals, priceStr } from "../../format";
 
 export const EMA_COLORS = [theme.accent, theme.textPrimary, theme.textSecondary, theme.up, theme.down] as const;
 
@@ -196,7 +196,7 @@ export function useIntradayCharts(
     });
     h.dynamic = [];
 
-    const decimals = priceDecimals(built.sidebar.last || d.candles.at(-1)?.close || 0);
+    const decimals = priceDecimals(built.sidebar.last || d.candles.at(-1)?.close || 0, isCryptoSymbol(built.sidebar.symbol));
     h.candle.applyOptions({ priceFormat: { type: "price", precision: decimals, minMove: 1 / 10 ** decimals } });
 
     const timeline = d.candles.map((c) => c.time);
@@ -212,7 +212,7 @@ export function useIntradayCharts(
       s.setData(toggles.ema && emaLine ? padLineData(emaLine.data, timeline) : []);
     });
     h.vwapSeries.setData(toggles.vwap && d.vwap ? padLineData(d.vwap, timeline) : []);
-    h.fvg.setData(toggles.fvg ? (d.fvgZones ?? []) : []);
+    h.fvg.setData(toggles.fvg ? (d.fvgZones ?? []) : [], decimals);
     const anchor = built.sidebar.prediction?.anchor;
     const anchorHere = anchor && anchor.timeframe === activeTf ? anchor : null;
     h.anchorBg.setData(toggles.ai && anchorHere ? [Math.floor(Date.parse(anchorHere.time) / 1000)] : []);
@@ -278,9 +278,6 @@ export function useIntradayCharts(
     const dc = built.sidebar.dayContext;
     if (toggles.daylevel && dc) {
       const dayLevels: { price: number | null | undefined; title: string }[] = [
-        { price: dc.prev_day?.high, title: "昨高" },
-        { price: dc.prev_day?.close, title: "昨收" },
-        { price: dc.prev_day?.low, title: "昨低" },
         { price: dc.pre_market?.high, title: "盘前高" },
         { price: dc.pre_market?.low, title: "盘前低" },
         { price: dc.opening_range?.high, title: "开盘区高" },

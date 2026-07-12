@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { TriangleAlert } from "lucide-react";
 import type { IntradayBuilt, TimeframeKey } from "../../../../shared/types";
-import { priceStr } from "../../format";
+import { isCryptoSymbol, priceDecimals, priceStr } from "../../format";
 import { MarketTime } from "../../ui";
 import type { SidebarTab } from "../SidebarTabs";
 import { SidebarTabs } from "../SidebarTabs";
@@ -76,7 +76,7 @@ export function IntradaySidebar({
         <div className="header">
           <div className="symbol">{s.symbol}</div>
           <div className="name">{s.name}</div>
-          <div className="price">${priceStr(s.last)}</div>
+          <div className="price">${priceStr(s.last, priceDecimals(s.last, isCryptoSymbol(s.symbol)))}</div>
           <div className="price-date">{s.asOf ? <MarketTime value={s.asOf} /> : ""} · 长桥证券</div>
         </div>
 

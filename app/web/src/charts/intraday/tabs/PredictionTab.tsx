@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 import { TriangleAlert } from "lucide-react";
 import type { IntradayBuilt, TimeframeKey } from "../../../../../shared/types";
-import { fmt, priceDecimals, priceStr, signed } from "../../../format";
+import { fmt, isCryptoSymbol, priceDecimals, priceStr, signed } from "../../../format";
 import { TF_LABELS } from "../IntradayDashboard";
 import { DIRECTION_COLOR, DIRECTION_LABEL } from "../directionLabels";
 import { AutoSignalItem, Pattern123Item, PriceZoneCard, TargetContextCard, TechRow } from "./predictionTabParts";
@@ -27,7 +27,7 @@ export function PredictionTab({ built, activeTf, predictionUpdatedAt, prediction
   const s = built.sidebar;
   const p = s.prediction;
   const ep = s.entryPlan;
-  const dp = priceDecimals(s.last);
+  const dp = priceDecimals(s.last, isCryptoSymbol(s.symbol));
   const px = (x: number) => priceStr(x, dp);
   const scenarios = (p?.scenarios ?? []).map((sc) => {
     const raw = sc as unknown as Record<string, unknown>;
@@ -187,7 +187,7 @@ export function PredictionTab({ built, activeTf, predictionUpdatedAt, prediction
             <>
               <div className="section-subtitle">目标依据</div>
               {targetContexts.map((target) => (
-                <TargetContextCard key={target.key} target={target} />
+                <TargetContextCard key={target.key} target={target} decimals={dp} />
               ))}
             </>
           )}
@@ -195,7 +195,7 @@ export function PredictionTab({ built, activeTf, predictionUpdatedAt, prediction
             <>
               <div className="section-subtitle">关键区间</div>
               {priceZones.map((zone, i) => (
-                <PriceZoneCard key={`${zone.kind}-${zone.label}-${i}`} zone={zone} compact />
+                <PriceZoneCard key={`${zone.kind}-${zone.label}-${i}`} zone={zone} compact decimals={dp} />
               ))}
             </>
           )}
@@ -233,10 +233,10 @@ export function PredictionTab({ built, activeTf, predictionUpdatedAt, prediction
           <>
             <SectionTitle>自动信号 · {TF_LABELS[activeTf]}</SectionTitle>
             {patterns123.map((pat, i) => (
-              <Pattern123Item key={`p123-${i}`} pat={pat} />
+              <Pattern123Item key={`p123-${i}`} pat={pat} decimals={dp} />
             ))}
             {autoItems.map((it, i) => (
-              <AutoSignalItem key={i} kindKey={it.kindKey} pair={it.pair} />
+              <AutoSignalItem key={i} kindKey={it.kindKey} pair={it.pair} decimals={dp} />
             ))}
             <div className="note-block">简化算法自动检测（基于已确认摆动点），仅供参考，不构成买卖依据</div>
           </>
