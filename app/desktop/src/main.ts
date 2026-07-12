@@ -15,8 +15,8 @@ import { createWindow } from "./window/mainWindow.js";
 import { showFatalErrorWindow } from "./window/fatalErrorWindow.js";
 import { applyDevDockIcon } from "./window/dockIcon.js";
 import { registerAppProtocolHandler, registerAppScheme, resolveWebDistRoot } from "./protocol/protocol.js";
-import { createExternalApiController, type ExternalApiController } from "./externalApi/controller.js";
-import { registerExternalApiIpc } from "./externalApi/ipc.js";
+import { createOnboardingStore } from "./onboarding/store.js";
+import { registerOnboardingIpc } from "./onboarding/ipc.js";
 import { runImportFromRepoFlow } from "./dataImport/flow.js";
 import { sendTabsCommand } from "./tabs/commands.js";
 import { initUpdater } from "./updater/updater.js";
@@ -26,8 +26,6 @@ import { initUpdater } from "./updater/updater.js";
 // that ordering impossible to get wrong regardless of what else this file
 // grows into.
 registerAppScheme();
-
-let externalApiController: ExternalApiController | undefined;
 
 function installAppMenu(checkForUpdates: () => void): void {
   createAppMenuManager({
@@ -51,8 +49,7 @@ function installAppMenu(checkForUpdates: () => void): void {
 app.whenReady().then(async () => {
   try {
     applyDevDockIcon();
-    const kernel = await bootKernel();
-    const apiApp = kernel.app.getInstance();
+    await bootKernel();
     const { ipcServiceClasses } = await import("./ipc/index.js");
     createServices(ipcServiceClasses);
 
@@ -62,9 +59,7 @@ app.whenReady().then(async () => {
       distRootExists: () => existsSync(webDistRoot),
     });
 
-    externalApiController = createExternalApiController(async (request) => apiApp.fetch(request));
-    registerExternalApiIpc(externalApiController);
-    await externalApiController.boot();
+    registerOnboardingIpc(createOnboardingStore());
 
     const updater = initUpdater();
     installAppMenu(() => updater.checkNow());
@@ -80,8 +75,4 @@ app.whenReady().then(async () => {
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
-});
-
-app.on("before-quit", () => {
-  void externalApiController?.shutdown();
 });

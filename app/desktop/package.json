@@ -1,6 +1,6 @@
 {
   "name": "@trade/desktop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "main": "dist-main/main.mjs",
@@ -20,7 +20,6 @@
   },
   "dependencies": {
     "@earendil-works/pi-ai": "^0.80.6",
-    "@hono/node-server": "1.19.14",
     "better-sqlite3": "^12.11.1",
     "electron-ipc-decorator": "^1.0.1",
     "electron-window-state": "5.0.3"
