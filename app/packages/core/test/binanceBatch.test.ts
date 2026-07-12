@@ -35,7 +35,10 @@ describe("Binance Top volume analysis", () => {
         started: true,
         done: Promise.resolve().then(() => latest.set(symbol, `chart-${symbol}`)),
       })) as BinanceBatchDeps["run"],
-      latestId: async (symbol) => latest.get(symbol) ?? null,
+      latestSummary: async (symbol) => {
+        const id = latest.get(symbol);
+        return id ? { id, direction: "long" as const, entryStatus: "waiting" as const } : null;
+      },
       now: () => 1_750_000_000_000,
     };
 
@@ -48,6 +51,7 @@ describe("Binance Top volume analysis", () => {
       "chart-ETHUSDT",
       "chart-SOLUSDT",
     ]);
+    expect(completed.items.every((item) => item.direction === "long" && item.entryStatus === "waiting")).toBe(true);
   });
 
   it("marks a run failed when no new chart is created", async () => {
@@ -55,7 +59,7 @@ describe("Binance Top volume analysis", () => {
       leaders: vi.fn().mockResolvedValue([leaders[0]]),
       analystModel: () => model,
       run: (() => ({ started: true, done: Promise.resolve() })) as BinanceBatchDeps["run"],
-      latestId: async () => "same-chart",
+      latestSummary: async () => ({ id: "same-chart" }),
       now: () => 1_750_000_000_000,
     };
 
@@ -73,7 +77,7 @@ describe("Binance Top volume analysis", () => {
       leaders: leaderFn,
       analystModel: () => model,
       run: (() => ({ started: true, done: pending })) as BinanceBatchDeps["run"],
-      latestId: async () => null,
+      latestSummary: async () => null,
       now: () => 1_750_000_000_000,
     };
 

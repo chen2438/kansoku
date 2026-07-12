@@ -37,6 +37,9 @@ export interface BinanceBatchItem {
   changePercent: number;
   status: BinanceBatchItemStatus;
   chartId?: string;
+  // 完成后带上分析结论，供列表显示"做多（待触发/已触发）/做空/观望"而非"完成"。
+  direction?: "long" | "short" | "neutral";
+  entryStatus?: "waiting" | "triggered" | "invalidated" | "stopped" | null;
   error?: string;
 }
 export interface BinanceBatchState {

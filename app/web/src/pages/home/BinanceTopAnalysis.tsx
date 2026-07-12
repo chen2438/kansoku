@@ -1,11 +1,31 @@
 import { Activity, LoaderCircle } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { BinanceBatchState } from "../../../../packages/core/src/contract/symbols";
+import type { BinanceBatchItem, BinanceBatchState } from "../../../../packages/core/src/contract/symbols";
 import { errorMessage } from "../../api";
 import { client } from "../../client";
 import { Button, ErrorBox } from "../../ui";
 
 const POLL_MS = 2_000;
+
+const DIR_LABEL: Record<string, string> = { long: "做多", short: "做空", neutral: "观望" };
+const ENTRY_STATUS_LABEL: Record<string, string> = {
+  waiting: "待触发",
+  triggered: "已触发",
+  invalidated: "已失效",
+  stopped: "已止损",
+};
+
+function itemLabel(item: BinanceBatchItem): string {
+  if (item.status === "queued") return "等待";
+  if (item.status === "running") return "分析中";
+  if (item.status === "failed") return "失败";
+  // completed —— 显示分析结论而非"完成"
+  if (!item.direction) return "完成";
+  if (item.direction === "neutral") return "观望";
+  const dir = DIR_LABEL[item.direction] ?? item.direction;
+  const status = item.entryStatus ? ENTRY_STATUS_LABEL[item.entryStatus] : null;
+  return status ? `${dir}（${status}）` : dir;
+}
 
 export function BinanceTopAnalysis() {
   const [batch, setBatch] = useState<BinanceBatchState | null>(null);
@@ -64,7 +84,7 @@ export function BinanceTopAnalysis() {
           {batch.items.map((item) => (
             <a key={item.symbol} className={`binance-batch-item is-${item.status}`} href={`/symbol/${encodeURIComponent(item.symbol)}`} title={item.error ?? `24h 成交额 ${item.quoteVolume.toLocaleString("zh-CN")} USDT`}>
               <span>{item.rank}. {item.symbol}</span>
-              <span>{item.status === "queued" ? "等待" : item.status === "running" ? "分析中" : item.status === "completed" ? "完成" : "失败"}</span>
+              <span>{itemLabel(item)}</span>
             </a>
           ))}
         </div>
