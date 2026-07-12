@@ -708,6 +708,13 @@ export interface PredictionStats {
   by_origin: { analyst: StatsBucket; manual: StatsBucket };
 }
 
+// 按时间窗口拆分的战绩：今天 / 近3天 / 近7天 / 近1月 / 近3月 / 全部历史。
+export type StatsWindowKey = "today" | "d3" | "d7" | "d30" | "d90" | "all";
+
+export interface WindowedPredictionStats {
+  windows: Record<StatsWindowKey, PredictionStats>;
+}
+
 export interface AiUsageLayerSummary {
   runs: number;
   total_tokens: number;

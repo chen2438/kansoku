@@ -6,6 +6,8 @@ export interface StatsRow {
   direction: "long" | "short" | "neutral" | null;
   origin: StatsOrigin;
   outcome: AnalysisOutcome | null;
+  // 预测生成时间（ISO）——用于按时间窗口拆分战绩；aggregateStats 本身忽略它。
+  ts?: string;
 }
 
 interface MutableBucket extends StatsBucket {

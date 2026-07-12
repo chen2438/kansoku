@@ -1,10 +1,10 @@
-import type { AiUsageSummary, OverviewBoard, OverviewRecap, PredictionStats } from "../../../../shared/types.js";
+import type { AiUsageSummary, OverviewBoard, OverviewRecap, WindowedPredictionStats } from "../../../../shared/types.js";
 import { defineRoutes } from "./defineRoutes.js";
 
 export interface OverviewApi {
   board(): Promise<OverviewBoard>;
   recap(input: { date?: string }): Promise<OverviewRecap>;
-  stats(): Promise<PredictionStats>;
+  stats(): Promise<WindowedPredictionStats>;
   usage(input: { date?: string }): Promise<AiUsageSummary>;
   recapDates(): Promise<string[]>;
 }

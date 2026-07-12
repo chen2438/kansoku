@@ -211,10 +211,24 @@ export const overviewService: OverviewApi = {
         direction: prediction.direction,
         origin: doc?.input.origin === "analyst" ? "analyst" : "manual",
         outcome,
+        ts: meta.created_at,
       });
     });
 
-    return aggregateStats(rows);
+    const now = Date.now();
+    const todayE = easternDate(new Date(now));
+    const dayMs = 86_400_000;
+    const since = (days: number) => rows.filter((r) => r.ts != null && now - new Date(r.ts).getTime() <= days * dayMs);
+    return {
+      windows: {
+        today: aggregateStats(rows.filter((r) => r.ts != null && easternDate(new Date(r.ts)) === todayE)),
+        d3: aggregateStats(since(3)),
+        d7: aggregateStats(since(7)),
+        d30: aggregateStats(since(30)),
+        d90: aggregateStats(since(90)),
+        all: aggregateStats(rows),
+      },
+    };
   },
 
   async usage(input) {

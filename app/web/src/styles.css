@@ -629,6 +629,14 @@ a.zone-item:hover { text-decoration: none; background: var(--bg-hover); }
 .symbol-card-comment.warn { color: var(--accent); }
 .symbol-card-comment.alert { color: var(--down); }
 .overview-stats { display: flex; flex-direction: column; gap: 6px; }
+.stats-window-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.stats-window-tab {
+  padding: 2px 10px; font-size: var(--fs-sm); border-radius: 999px; cursor: pointer;
+  color: var(--text-secondary); background: transparent;
+  border: 1px solid var(--border, rgba(139, 148, 158, 0.3));
+}
+.stats-window-tab:hover { color: var(--text-primary); }
+.stats-window-tab.active { color: var(--text-primary); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .stats-line { display: flex; gap: 12px; font-size: var(--fs-md); align-items: baseline; }
 .stats-line .k { color: var(--text-secondary); min-width: 88px; }
 .stats-line .v { color: var(--text-primary); font-variant-numeric: tabular-nums; }
