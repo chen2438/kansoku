@@ -43,19 +43,7 @@ COREPACK_ENABLE_AUTO_PIN=0 pnpm dev
 
 ## Electron 桌面版
 
-注意：系统环境中可能包含 `ELECTRON_RUN_AS_NODE=1`，启动 Electron 进程前必须将其移除。
-
-已有构建产物时直接运行：
-
 ```bash
-cd /Users/nanmener/Github/kansoku/app
-env -u ELECTRON_RUN_AS_NODE COREPACK_ENABLE_AUTO_PIN=0 corepack pnpm --filter @trade/desktop start
-```
-
-代码修改后重新构建并运行：
-
-```bash
-cd /Users/nanmener/Github/kansoku/app
-COREPACK_ENABLE_AUTO_PIN=0 corepack pnpm --filter @trade/desktop build
-env -u ELECTRON_RUN_AS_NODE COREPACK_ENABLE_AUTO_PIN=0 corepack pnpm --filter @trade/desktop start
+cd /Users/nanmener/Github/kansoku
+COREPACK_ENABLE_AUTO_PIN=0 pnpm --dir app dev:desktop
 ```
