@@ -8,10 +8,8 @@ export interface HealthStatus {
 
 export interface HealthApi {
   get(): Promise<HealthStatus>;
-  getLeases(): Promise<string[]>;
 }
 
 export const healthRoutes = defineRoutes<HealthApi>("health", {
   get: { method: "GET", path: "/" },
-  getLeases: { method: "GET", path: "/leases" },
 });
