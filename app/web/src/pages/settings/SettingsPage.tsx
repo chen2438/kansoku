@@ -5,6 +5,7 @@ import { client } from "../../client";
 import { navigate } from "../../router";
 import { Button, ErrorBox } from "../../ui";
 import { useTitle } from "../../useTitle";
+import { BinanceAccountCard } from "./BinanceAccountCard";
 import { CredentialsSettingsCard } from "./CredentialsSettingsCard";
 import { ExternalApiCard } from "./ExternalApiCard";
 import { ProviderCredentialsCard } from "./ProviderCredentialsCard";
@@ -81,6 +82,7 @@ function SettingsWorkspace({
             lobehubCreditsError={lobehubCreditsError}
           />
           <SettingsIssuesPanel issues={view.issues} />
+          <BinanceAccountCard />
           <ExternalApiCard />
         </div>
       </div>

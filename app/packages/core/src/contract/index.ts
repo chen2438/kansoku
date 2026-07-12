@@ -1,4 +1,5 @@
 import { annotationsRoutes, type AnnotationsApi } from "./annotations.js";
+import { binanceAccountRoutes, type BinanceAccountApi } from "./binanceAccount.js";
 import { chartsRoutes, type ChartsApi } from "./charts.js";
 import { chatRoutes, type ChatApi } from "./chat.js";
 import { credentialsRoutes, type CredentialsApi } from "./credentials.js";
@@ -20,6 +21,7 @@ export interface AppApi {
   credentials: CredentialsApi;
   health: HealthApi;
   lobehub: LobeHubApi;
+  binanceAccount: BinanceAccountApi;
 }
 
 export const allRoutes = {
@@ -33,9 +35,11 @@ export const allRoutes = {
   credentials: credentialsRoutes,
   health: healthRoutes,
   lobehub: lobehubRoutes,
+  binanceAccount: binanceAccountRoutes,
 };
 
 export * from "./annotations.js";
+export * from "./binanceAccount.js";
 export * from "./charts.js";
 export * from "./chat.js";
 export * from "./credentials.js";
