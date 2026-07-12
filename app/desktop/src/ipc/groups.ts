@@ -9,6 +9,7 @@ export const IPC_GROUPS = [
   "credentials",
   "health",
   "lobehub",
+  "binanceAccount",
 ] as const;
 
 export type IpcGroup = (typeof IPC_GROUPS)[number];
