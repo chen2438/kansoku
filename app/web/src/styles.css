@@ -720,6 +720,13 @@ a.zone-item:hover { text-decoration: none; background: var(--bg-hover); }
 .positions-row .down { color: var(--down); }
 .binance-positions-list { grid-template-columns: max-content minmax(0, 1fr) max-content max-content max-content; }
 .binance-positions-list .detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.binance-positions-columns { display: contents; }
+.binance-positions-columns span,
+.binance-history-columns span {
+  color: var(--text-muted); font-size: var(--fs-xs); font-weight: 500; white-space: nowrap;
+}
+.binance-positions-columns span:nth-child(n + 3),
+.binance-history-columns span:nth-child(n + 3) { text-align: right; }
 .binance-positions-empty { padding-top: 8px; color: var(--text-secondary); font-size: var(--fs-md); }
 .binance-positions-settings-link { color: var(--accent); }
 .binance-positions-actions { display: inline-flex; gap: 6px; margin-left: auto; }
@@ -732,12 +739,15 @@ a.zone-item:hover { text-decoration: none; background: var(--bg-hover); }
 .binance-action-error { color: var(--down); }
 .binance-history { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--border); }
 .binance-history-title { color: var(--text-primary); font-size: var(--fs-md); font-weight: 600; }
-.binance-history-list { display: flex; flex-direction: column; margin-top: 7px; }
-.binance-history-row {
+.binance-history-list {
   display: grid; grid-template-columns: max-content minmax(0, 1fr) max-content max-content;
-  gap: 8px; align-items: baseline; padding: 5px 0; font-size: var(--fs-sm); font-variant-numeric: tabular-nums;
+  column-gap: 8px; align-items: baseline; margin-top: 7px;
 }
-.binance-history-row + .binance-history-row { border-top: 1px solid var(--border); }
+.binance-history-columns { display: contents; }
+.binance-history-row {
+  display: contents; font-size: var(--fs-sm); font-variant-numeric: tabular-nums;
+}
+.binance-history-row > * { padding: 5px 0; border-top: 1px solid var(--border); }
 .binance-history-row .sym { color: var(--text-primary); font-weight: 600; }
 .binance-history-row .detail,
 .binance-history-row .date { color: var(--text-secondary); }

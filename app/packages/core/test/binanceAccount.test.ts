@@ -5,6 +5,7 @@ import {
   binanceCloseAllTestnetPositions,
   binanceCloseTestnetPosition,
   binancePlaceTestnetOrder,
+  binancePositions,
   signQuery,
   summarizeBinanceClosedPositions,
 } from "../src/services/marketdata/binanceAccount.js";
@@ -73,6 +74,40 @@ describe("binance closed-position history", () => {
     expect(url.searchParams.get("endTime")).toBe(String(now));
     expect(url.searchParams.get("page")).toBe("1");
     expect(url.searchParams.get("limit")).toBe("1000");
+  });
+});
+
+describe("binance current-position net PnL", () => {
+  it("calculates long and short PnL from Binance break-even prices", async () => {
+    const fetchMock = vi.fn(async () => Response.json([
+      {
+        symbol: "BTCUSDT", positionAmt: "2", positionSide: "BOTH", entryPrice: "100",
+        breakEvenPrice: "101", markPrice: "105", unRealizedProfit: "10", leverage: "10", liquidationPrice: "50",
+      },
+      {
+        symbol: "ETHUSDT", positionAmt: "-3", positionSide: "BOTH", entryPrice: "198",
+        breakEvenPrice: "200", markPrice: "190", unRealizedProfit: "25", leverage: "5", liquidationPrice: "250",
+      },
+      {
+        symbol: "XRPUSDT", positionAmt: "4", positionSide: "BOTH", entryPrice: "1",
+        breakEvenPrice: "0", markPrice: "1.1", unRealizedProfit: "0.4", leverage: "3", liquidationPrice: "0.5",
+      },
+    ]));
+
+    const positions = await binancePositions(
+      { apiKey: "test-key", apiSecret: "test-secret", testnet: true },
+      fetchMock as unknown as typeof fetch,
+    );
+
+    expect(positions[0]).toMatchObject({
+      symbol: "BTCUSDT", breakEvenPrice: 101, netUnrealizedPnl: 8, netUnrealizedPnlIncludesCosts: true,
+    });
+    expect(positions[1]).toMatchObject({
+      symbol: "ETHUSDT", breakEvenPrice: 200, netUnrealizedPnl: 30, netUnrealizedPnlIncludesCosts: true,
+    });
+    expect(positions[2]).toMatchObject({
+      symbol: "XRPUSDT", netUnrealizedPnl: 0.4, netUnrealizedPnlIncludesCosts: false,
+    });
   });
 });
 

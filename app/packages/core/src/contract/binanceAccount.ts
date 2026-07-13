@@ -33,8 +33,11 @@ export interface BinancePositionRow {
   side: "long" | "short" | "flat";
   positionAmt: number;
   entryPrice: number;
+  breakEvenPrice: number;
   markPrice: number;
   unrealizedPnl: number;
+  netUnrealizedPnl: number;
+  netUnrealizedPnlIncludesCosts: boolean;
   leverage: number;
   liquidationPrice: number;
 }

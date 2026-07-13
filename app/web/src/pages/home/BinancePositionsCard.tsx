@@ -129,7 +129,8 @@ export function BinancePositionsCard() {
   if (positionsError) return <ErrorBox>Binance 持仓拉取失败：{positionsError}</ErrorBox>;
   if (!positions) return <div className="note-block">Binance 持仓加载中…</div>;
 
-  const totalUnrealizedPnl = positions.reduce((sum, position) => sum + position.unrealizedPnl, 0);
+  const totalNetUnrealizedPnl = positions.reduce((sum, position) => sum + position.netUnrealizedPnl, 0);
+  const allNetPnlIncludesCosts = positions.every((position) => position.netUnrealizedPnlIncludesCosts);
 
   return (
     <Card className="positions-card binance-positions-card">
@@ -141,7 +142,10 @@ export function BinancePositionsCard() {
           仓位 <b>{positions.length}</b>
         </span>
         <span>
-          浮动盈亏 <b className={upDown(totalUnrealizedPnl)}>{signedMoney(totalUnrealizedPnl)}</b>
+          净浮盈亏{" "}
+          <b className={upDown(totalNetUnrealizedPnl)} title={allNetPnlIncludesCosts ? "按 Binance 盈亏平衡价计算，已反映当前已发生的持仓成本" : "部分持仓缺少盈亏平衡价，暂时使用 Binance 毛浮盈亏"}>
+            {signedMoney(totalNetUnrealizedPnl)}
+          </b>
         </span>
         <span className="binance-positions-actions">
           <Button className="binance-compact-btn" onClick={refresh}>刷新</Button>
@@ -160,6 +164,13 @@ export function BinancePositionsCard() {
         <div className="binance-positions-empty">暂无 Binance 持仓</div>
       ) : (
         <div className="positions-list binance-positions-list">
+          <div className="binance-positions-columns" aria-hidden="true">
+            <span>合约</span>
+            <span>方向 / 数量 @ 开仓价 · 杠杆</span>
+            <span>标记价</span>
+            <span>净浮盈亏</span>
+            <span>操作</span>
+          </div>
           {positions.map((position) => (
             <div key={`${position.symbol}:${position.side}`} className="positions-row">
               <a className="sym" href={`/symbol/${encodeURIComponent(position.symbol)}`}>
@@ -172,8 +183,13 @@ export function BinancePositionsCard() {
                 {Math.abs(position.positionAmt)} @ {positionPrice(position.entryPrice, position.markPrice)} · {position.leverage}x
               </span>
               <span className="last">{positionPrice(position.markPrice, position.markPrice)}</span>
-              <span className={`pct ${upDown(position.unrealizedPnl)}`}>
-                {signedMoney(position.unrealizedPnl)}
+              <span
+                className={`pct ${upDown(position.netUnrealizedPnl)}`}
+                title={position.netUnrealizedPnlIncludesCosts
+                  ? `毛浮盈亏 ${signedMoney(position.unrealizedPnl)}；净浮盈亏按盈亏平衡价 ${positionPrice(position.breakEvenPrice, position.markPrice)} 计算`
+                  : "Binance 未返回有效盈亏平衡价，暂时显示毛浮盈亏"}
+              >
+                {signedMoney(position.netUnrealizedPnl)}
               </span>
               <span className="binance-position-action">
                 {status.testnet && (
@@ -202,6 +218,12 @@ export function BinancePositionsCard() {
           <div className="binance-positions-empty">近 90 天暂无已平仓记录</div>
         ) : (
           <div className="binance-history-list">
+            <div className="binance-history-columns" aria-hidden="true">
+              <span>合约</span>
+              <span>毛盈亏 / 费用</span>
+              <span>最后平仓</span>
+              <span>净盈亏</span>
+            </div>
             {history.rows.map((row) => {
               const feeAdjustments = row.commission + row.fundingFee + row.otherAdjustments;
               return (

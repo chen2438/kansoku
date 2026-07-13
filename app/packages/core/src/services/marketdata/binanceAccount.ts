@@ -228,6 +228,7 @@ interface RawPosition {
   symbol: string;
   positionAmt: string;
   entryPrice: string;
+  breakEvenPrice?: string;
   markPrice: string;
   unRealizedProfit: string;
   leverage: string;
@@ -235,11 +236,18 @@ interface RawPosition {
   positionSide?: string;
 }
 
-export async function binancePositions(creds: BinanceAccountCreds): Promise<BinancePositionRow[]> {
-  const raw = await signedGet<RawPosition[]>(creds, "/fapi/v2/positionRisk");
+export async function binancePositions(
+  creds: BinanceAccountCreds,
+  fetchImpl: typeof fetch = fetch,
+): Promise<BinancePositionRow[]> {
+  const raw = await signedGet<RawPosition[]>(creds, "/fapi/v2/positionRisk", new URLSearchParams(), fetchImpl);
   return (raw ?? [])
     .map((p) => {
       const amt = num(p.positionAmt);
+      const breakEvenPrice = num(p.breakEvenPrice);
+      const markPrice = num(p.markPrice);
+      const unrealizedPnl = num(p.unRealizedProfit);
+      const netUnrealizedPnlIncludesCosts = breakEvenPrice > 0;
       const side = p.positionSide === "LONG"
         ? ("long" as const)
         : p.positionSide === "SHORT"
@@ -250,8 +258,11 @@ export async function binancePositions(creds: BinanceAccountCreds): Promise<Bina
         side,
         positionAmt: amt,
         entryPrice: num(p.entryPrice),
-        markPrice: num(p.markPrice),
-        unrealizedPnl: num(p.unRealizedProfit),
+        breakEvenPrice,
+        markPrice,
+        unrealizedPnl,
+        netUnrealizedPnl: netUnrealizedPnlIncludesCosts ? (markPrice - breakEvenPrice) * amt : unrealizedPnl,
+        netUnrealizedPnlIncludesCosts,
         leverage: num(p.leverage),
         liquidationPrice: num(p.liquidationPrice),
       };
