@@ -126,6 +126,17 @@ async function signedPost<T>(
     });
     if (!response.ok) {
       const text = await response.text();
+      let code: number | null = null;
+      try { code = num((JSON.parse(text) as { code?: unknown }).code); } catch { /* Binance 偶尔返回非 JSON 文本。 */ }
+      if (code === -4411) {
+        const symbol = params.get("symbol") ?? "该 TradFi 合约";
+        throw new ClientError(
+          `Binance 拒绝 ${symbol} 操作：当前测试网账号尚未签署 TradFi Perps 协议（错误 -4411）`,
+          "请本人登录与此 API key 对应的 Binance Futures 测试网账户，进入 TradFi 或该合约交易页，按页面提示阅读并接受协议后重试；如果测试网页面没有开通入口，该测试网账号暂时无法交易 TradFi 合约",
+          400,
+          "BINANCE_TRADFI_AGREEMENT_REQUIRED",
+        );
+      }
       const hint =
         response.status === 401
           ? "API key/secret 无效，或测试网 API key 没有交易权限"

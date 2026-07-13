@@ -132,6 +132,39 @@ describe("binance testnet order", () => {
     expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/fapi/v1/order"))).toBe(false);
   });
 
+  it("translates Binance -4411 into an actionable TradFi agreement error", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/premiumIndex")) return Response.json({ markPrice: "50000" });
+      if (url.includes("/exchangeInfo")) {
+        return Response.json({ symbols: [{
+          symbol: "XAUUSDT",
+          filters: [{ filterType: "MARKET_LOT_SIZE", minQty: "0.001", maxQty: "100", stepSize: "0.001" }],
+        }] });
+      }
+      if (url.includes("/positionSide/dual")) return Response.json({ dualSidePosition: false });
+      if (url.endsWith("/fapi/v1/leverage")) return Response.json({ symbol: "XAUUSDT", leverage: 5 });
+      if (url.endsWith("/fapi/v1/order") && init?.method === "POST") {
+        return Response.json({ code: -4411, msg: "Please sign TradFi-Perps agreement contract first." }, { status: 400 });
+      }
+      return new Response("unexpected", { status: 500 });
+    });
+
+    await expect(binancePlaceTestnetOrder(
+      testnetCreds,
+      {
+        symbol: "XAUUSDT", direction: "LONG", initialMargin: 20, leverage: 5,
+        takeProfitPrice: 55_000, stopLossPrice: 45_000, confirmed: true,
+      },
+      fetchMock as unknown as typeof fetch,
+    )).rejects.toMatchObject({
+      code: "BINANCE_TRADFI_AGREEMENT_REQUIRED",
+      status: 400,
+      message: expect.stringContaining("尚未签署 TradFi Perps 协议"),
+      hint: expect.stringContaining("本人登录"),
+    });
+  });
+
   it("re-reads a one-way position and closes its full live quantity with reduce-only", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);

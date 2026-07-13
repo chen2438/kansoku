@@ -1,4 +1,5 @@
-import { Controller, ContextParam, Get, Param, Post, Query } from "@tsuki-hono/common";
+import { Body, Controller, ContextParam, Get, Param, Post, Query } from "@tsuki-hono/common";
+import type { BinanceBatchStartInput } from "../../../../packages/core/src/contract/symbols.js";
 import type { Context } from "hono";
 import { symbolsService } from "../../../../packages/core/src/modules/symbols/symbols.service.js";
 import { ClientError } from "../../../../packages/core/src/errors.js";
@@ -6,8 +7,8 @@ import { ClientError } from "../../../../packages/core/src/errors.js";
 @Controller("symbols")
 export class SymbolsController {
   @Post("/binance/top-volume-analysis")
-  async startBinanceTopAnalysis() {
-    return { ok: true, data: await symbolsService.binanceTopAnalysisStart() };
+  async startBinanceTopAnalysis(@Body() body?: BinanceBatchStartInput) {
+    return { ok: true, data: await symbolsService.binanceTopAnalysisStart(body ?? {}) };
   }
 
   @Get("/binance/top-volume-analysis/status")

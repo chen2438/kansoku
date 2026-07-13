@@ -190,9 +190,9 @@ export const symbolsService: SymbolsApi = {
     return { started: result.started, ...(result.reason ? { reason: result.reason } : {}) };
   },
 
-  async binanceTopAnalysisStart() {
+  async binanceTopAnalysisStart(input = {}) {
     if (!aiConfig().analystModel) throw new ClientError("analyst layer disabled", "请先在设置中配置分析模型。", 503);
-    return startBinanceTopAnalysis();
+    return startBinanceTopAnalysis(input);
   },
 
   async binanceTopAnalysisStatus() {

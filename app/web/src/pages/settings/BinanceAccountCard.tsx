@@ -398,7 +398,7 @@ export function BinanceAccountCard() {
 
       <div className="settings-footer-note">
         账号连接用于展示余额、持仓与挂单；连接测试网时还可在人工核对后设置初始保证金、杠杆、方向、止盈和止损，并按市价开仓。主网下单仍由服务端硬性禁止，
-        AI 也不会自动触发订单。密钥用本机加密存储；测试网 key 需要交易权限，主网 key 仍建议只授予读取权限并设置 IP 白名单。
+        只有用户在首页明确确认“AI 分析 Binance Top 20 并下单”后，AI 批次才会触发测试网订单。密钥用本机加密存储；测试网 key 需要交易权限，主网 key 仍建议只授予读取权限并设置 IP 白名单。
       </div>
     </Card>
   );

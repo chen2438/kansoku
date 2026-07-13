@@ -30,6 +30,11 @@ export interface NoteResult {
 export type ReassessResult = { started: boolean; reason?: string };
 
 export type BinanceBatchItemStatus = "queued" | "running" | "completed" | "failed";
+export type BinanceBatchTradeStatus = "pending" | "submitted" | "skipped" | "failed";
+export interface BinanceBatchStartInput {
+  autoTrade?: boolean;
+  confirmed?: boolean;
+}
 export interface BinanceBatchItem {
   symbol: string;
   rank: number;
@@ -40,10 +45,14 @@ export interface BinanceBatchItem {
   // 完成后带上分析结论，供列表显示"做多（待触发/已触发）/做空/观望"而非"完成"。
   direction?: "long" | "short" | "neutral";
   entryStatus?: "waiting" | "triggered" | "invalidated" | "stopped" | null;
+  tradeStatus?: BinanceBatchTradeStatus;
+  tradeOrderId?: number;
+  tradeError?: string;
   error?: string;
 }
 export interface BinanceBatchState {
   id: string;
+  mode: "analysis" | "analysis_and_trade";
   status: "running" | "completed";
   startedAt: string;
   finishedAt?: string;
@@ -74,7 +83,7 @@ export interface SymbolsApi {
   journal(input: { sym: string }): Promise<JournalListRow[]>;
   journalEntry(input: { sym: string; name: string }): Promise<JournalEntry>;
   reassess(input: { sym: string }): Promise<ReassessResult>;
-  binanceTopAnalysisStart(input?: Record<string, never>): Promise<BinanceBatchState>;
+  binanceTopAnalysisStart(input?: BinanceBatchStartInput): Promise<BinanceBatchState>;
   binanceTopAnalysisStatus(input?: Record<string, never>): Promise<BinanceBatchState | null>;
   note(input: { sym: string }): Promise<NoteResult>;
   deepDive(input: { sym: string }): Promise<DeepDiveStartResult>;
