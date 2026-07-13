@@ -261,7 +261,7 @@ export function useIntradayCharts(
       }
       h.planLines.push(addPriceLine(h.candle, { price: ep.stop, color: planDead ? deadColor : theme.down, lineWidth: 2, lineStyle: 2, title: `止损 $${priceStr(ep.stop, decimals)}` }));
       h.planLines.push(addPriceLine(h.candle, { price: ep.target1, color: planDead ? deadColor : theme.up, lineWidth: 1, lineStyle: 2, title: `T1 $${priceStr(ep.target1, decimals)}` }));
-      h.planLines.push(addPriceLine(h.candle, { price: ep.target2, color: planDead ? deadColor : seriesPalette[1], lineWidth: 1, lineStyle: 2, title: `T2 $${priceStr(ep.target2, decimals)}` }));
+      // T2（第二止盈）不画线——判定战绩时只看 T1/止损，T2 不参与，画在图上反而误导。
       (ep.price_zones ?? [])
         .filter((z) => z.kind === "resistance")
         .forEach((z) => {
