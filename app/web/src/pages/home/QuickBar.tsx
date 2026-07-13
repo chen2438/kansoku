@@ -1,18 +1,11 @@
 import { useState } from "react";
+import { normalizeSymbol } from "../../lib/symbol";
+import { errorMessage } from "../../api";
+import { client } from "../../client";
+import { openSymbolContextMenu } from "../../desktop/newTab";
 import { navigate } from "../../router";
 import { listRecentSymbols } from "../../recentCharts";
-import { openSymbolContextMenu } from "../../desktop/newTab";
 import { Chip, Input } from "../../ui";
-import { client } from "../../client";
-import { errorMessage } from "../../api";
-
-function normalizeSymbol(raw: string): string | null {
-  let sym = raw.trim().toUpperCase();
-  if (!sym) return null;
-  if (/^[A-Z0-9]+USDT$/.test(sym)) return sym;
-  if (!sym.includes(".")) sym += ".US";
-  return /^[A-Z0-9.]+$/.test(sym) ? sym : null;
-}
 
 export function QuickBar({ shortcuts }: { shortcuts: string[] }) {
   const [input, setInput] = useState("");
@@ -24,12 +17,17 @@ export function QuickBar({ shortcuts }: { shortcuts: string[] }) {
   const go = async () => {
     const sym = normalizeSymbol(input);
     if (!sym) { setInputError("请输入有效的标的代码"); return; }
-    setChecking(true); setInputError(null);
+    setChecking(true);
+    setInputError(null);
     try {
       const result = await client.symbols.validate({ sym });
-      setInput(""); navigate(`/symbol/${encodeURIComponent(result.symbol)}`);
-    } catch (error) { setInputError(errorMessage(error)); }
-    finally { setChecking(false); }
+      setInput("");
+      navigate(`/symbol/${encodeURIComponent(result.symbol)}`);
+    } catch (error) {
+      setInputError(errorMessage(error));
+    } finally {
+      setChecking(false);
+    }
   };
 
   return (

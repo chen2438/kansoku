@@ -1,12 +1,14 @@
 import type { ChartDoc, RawBar, TimeframeKey } from "../../../../shared/types.js";
 import { ClientError } from "../errors.js";
 import { buildChart, rebuild, refreshBody } from "../services/build.js";
+import { getEventRisk } from "../services/events.js";
 import { TIMEFRAME_ORDER } from "../services/intraday.js";
+import { getOptionsLevels } from "../services/optionsLevels.js";
 import { getLongbridgeStream, type CandlePeriod } from "../services/marketdata/longbridgeStream.js";
-import { isBinanceSymbol } from "../services/symbol.utils.js";
 import { classifySession, isCurrentSessionId } from "../services/session.js";
 import { predictionStale } from "../services/staleness.js";
 import { loadChart } from "../services/store.js";
+import { isBinanceSymbol, normalizeSymbol } from "../services/symbol.utils.js";
 import { mergeCandleBar, mergeFreshBars, type PushBar } from "./candleMerge.js";
 import { createPoller, type PollerHandle } from "./poller.js";
 import { isPushFresh, pollIntervalMs } from "./pushFallback.js";
@@ -19,10 +21,9 @@ const PUSH_FRESH_WINDOW_MS = 3_000;
 
 function chartIntervalMs(key?: string): number {
   const state = key ? candleStates.get(key) : undefined;
-  // Binance 是 24 小时市场，不该按美股时段降频（否则美股收盘后图表每 5 分钟
-  // 才刷一次，价格严重滞后）——始终按常规盘档（15 秒）刷新。
-  const session =
-    state && isBinanceSymbol(state.symbol) ? "regular" : classifySession(Math.floor(Date.now() / 1000));
+  const session = state && isBinanceSymbol(state.symbol)
+    ? "regular"
+    : classifySession(Math.floor(Date.now() / 1000));
   const now = Date.now();
   const lastPushAt = state?.lastPushAt ?? null;
   if (state) {
@@ -41,8 +42,13 @@ function predictionFields(doc: ChartDoc) {
   return { prediction_updated_at: doc.prediction_updated_at, prediction_stale: predictionStale(doc, new Date()) };
 }
 
+interface LatestDoc {
+  title: string;
+  input: Record<string, unknown>;
+  prediction?: { prediction_updated_at: string | undefined; prediction_stale: boolean };
+}
+
 interface CandleState {
-  id: string;
   symbol: string;
   viewCount: number | undefined;
   timeframes: Partial<Record<TimeframeKey, RawBar[]>>;
@@ -51,6 +57,7 @@ interface CandleState {
   pushMode: boolean;
   debounceTimer: ReturnType<typeof setTimeout> | null;
   unsubs: Array<() => void>;
+  loadDoc: () => Promise<LatestDoc | null>;
 }
 
 const candleStates = new Map<string, CandleState>();
@@ -74,46 +81,39 @@ function scheduleDebouncedRebuild(key: string): void {
 // analysis snapshot plus whatever bars push/poller have merged in). Both the
 // streaming push path and the poller safety net funnel through here so the two
 // never diverge on the same series.
-async function buildFromState(state: CandleState, latest: ChartDoc): Promise<Record<string, unknown>> {
-  const latestInput = latest.input as Record<string, unknown>;
+async function buildFromState(state: CandleState, latest: LatestDoc): Promise<Record<string, unknown>> {
+  const latestInput = latest.input;
   const timeframes = state.timeframes;
   const lastM5 = timeframes.m5?.[timeframes.m5.length - 1];
+  // Docs persisted before options/event support have no such input fields, and
+  // stored values freeze at analysis time — the live view refetches both (the
+  // getters are memory-cached, so this is free on the streaming hot path).
+  const symbol = latestInput.symbol;
+  const [optionsLevels, eventRisk] =
+    typeof symbol === "string"
+      ? await Promise.all([getOptionsLevels(symbol).catch(() => null), getEventRisk(symbol).catch(() => null)])
+      : [null, null];
   const input: Record<string, unknown> = {
     ...latestInput,
     timeframes,
     as_of: lastM5?.time ?? latestInput.as_of,
+    options_levels: optionsLevels ?? latestInput.options_levels ?? null,
+    event_risk: eventRisk ?? latestInput.event_risk ?? null,
   };
   const result = rebuild("intraday", input, latest.title);
-  return { built: result.built, ...predictionFields({ ...latest, built: result.built }) };
+  return latest.prediction ? { built: result.built, ...latest.prediction } : { built: result.built };
 }
 
 async function runPushRebuild(key: string): Promise<void> {
   const state = candleStates.get(key);
   const handle = chartPollers.get(key);
   if (!state || !handle) return;
-  const latest = await loadChart(state.id);
+  const latest = await state.loadDoc();
   if (!latest) return;
   handle.pushData(await buildFromState(state, latest));
 }
 
-function setupCandleState(key: string, id: string, viewCount: number | undefined, doc: ChartDoc): void {
-  if (candleStates.has(key)) return;
-  const symbol = (doc.input as Record<string, unknown>).symbol;
-  if (typeof symbol !== "string" || !symbol) return;
-  const state: CandleState = {
-    id,
-    symbol,
-    viewCount,
-    timeframes: Object.fromEntries(
-      Object.entries((doc.input as Record<string, unknown>).timeframes as Partial<Record<TimeframeKey, RawBar[]>>)
-        .map(([tf, bars]) => [tf, viewCount === undefined ? bars : bars?.slice(-viewCount)]),
-    ) as Partial<Record<TimeframeKey, RawBar[]>>,
-    lastPushAt: null,
-    lastRebuildAt: 0,
-    pushMode: false,
-    debounceTimer: null,
-    unsubs: [],
-  };
+function wireCandleState(key: string, symbol: string, state: CandleState): void {
   candleStates.set(key, state);
   if (isBinanceSymbol(symbol)) return;
   const stream = getLongbridgeStream();
@@ -130,6 +130,44 @@ function setupCandleState(key: string, id: string, viewCount: number | undefined
     });
     state.unsubs.push(unsub);
   }
+}
+
+function setupCandleState(key: string, id: string, viewCount: number | undefined, doc: ChartDoc): void {
+  if (candleStates.has(key)) return;
+  const symbol = (doc.input as Record<string, unknown>).symbol;
+  if (typeof symbol !== "string" || !symbol) return;
+  const state: CandleState = {
+    symbol,
+    viewCount,
+    timeframes: { ...((doc.input as Record<string, unknown>).timeframes as Partial<Record<TimeframeKey, RawBar[]>>) },
+    lastPushAt: null,
+    lastRebuildAt: 0,
+    pushMode: false,
+    debounceTimer: null,
+    unsubs: [],
+    loadDoc: async () => {
+      const fresh = await loadChart(id);
+      if (!fresh) return null;
+      return { title: fresh.title, input: fresh.input as Record<string, unknown>, prediction: predictionFields(fresh) };
+    },
+  };
+  wireCandleState(key, symbol, state);
+}
+
+function setupPreviewCandleState(key: string, symbol: string, input: Record<string, unknown>, title: string): void {
+  if (candleStates.has(key)) return;
+  const state: CandleState = {
+    symbol,
+    viewCount: undefined,
+    timeframes: { ...(input.timeframes as Partial<Record<TimeframeKey, RawBar[]>>) },
+    lastPushAt: null,
+    lastRebuildAt: 0,
+    pushMode: false,
+    debounceTimer: null,
+    unsubs: [],
+    loadDoc: async () => ({ title, input }),
+  };
+  wireCandleState(key, symbol, state);
 }
 
 function teardownCandleState(key: string): void {
@@ -149,10 +187,6 @@ export async function subscribeChart(id: string, push: (envelope: string) => voi
     push(JSON.stringify({ type: "data", data: { built: doc.built, ...predictionFields(doc) } }));
   }
 
-  // 美股图表按"当日 session"关闭实时刷新（隔日 id 不再是当前 session 就冻结成历史快照）。
-  // 但 Binance 是 24 小时连续市场，chart id 里的 sessionDate 只是创建时最后一根 K 线的日期，
-  // 一旦 ET/UTC 跨日、或最后一根 K 线的 UTC 日期与 ET 日期不一致，isCurrentSessionId 就会变 false，
-  // 导致轮询器根本不启动、价格永远停在分析时刻。Binance 品种不受 session 边界约束，始终允许实时刷新。
   const rawSymbol = (doc.input as Record<string, unknown>).symbol;
   const docSymbol = typeof rawSymbol === "string" ? rawSymbol : "";
   const sessionCurrent = isBinanceSymbol(docSymbol) || isCurrentSessionId(id);
@@ -182,7 +216,7 @@ export async function subscribeChart(id: string, push: (envelope: string) => voi
               const incoming = freshTf[tf];
               if (incoming) state.timeframes[tf] = mergeFreshBars(state.timeframes[tf] ?? [], incoming);
             }
-            return await buildFromState(state, latest);
+            return await buildFromState(state, { title: latest.title, input: latest.input as Record<string, unknown>, prediction: predictionFields(latest) });
           }
         }
         return { built: result.built, ...predictionFields(latest) };
@@ -194,5 +228,48 @@ export async function subscribeChart(id: string, push: (envelope: string) => voi
     });
     chartPollers.set(key, handle);
   }
+  return handle.subscribe(push);
+}
+
+const previewInitialBuilt = new Map<string, unknown>();
+
+export async function subscribePreview(symbol: string, push: (envelope: string) => void): Promise<() => void> {
+  const normalized = normalizeSymbol(symbol);
+  const key = `preview:${normalized}`;
+
+  let handle = chartPollers.get(key);
+  if (!handle) {
+    const result = await buildChart({ type: "intraday", symbol: normalized, session: "intraday" });
+    previewInitialBuilt.set(key, result.built);
+    setupPreviewCandleState(key, normalized, result.input, result.title);
+    handle = createPoller({
+      intervalMs: () => chartIntervalMs(key),
+      task: async () => {
+        const state = candleStates.get(key);
+        if (!state) return { built: result.built };
+        const latest = await state.loadDoc();
+        if (!latest) return { built: result.built };
+        const body = refreshBody("intraday", latest.input);
+        if (body) {
+          const fresh = await buildChart(body);
+          const freshTf = (fresh.input.timeframes ?? {}) as Partial<Record<TimeframeKey, RawBar[]>>;
+          for (const tf of TIMEFRAME_ORDER) {
+            const incoming = freshTf[tf];
+            if (incoming) state.timeframes[tf] = mergeFreshBars(state.timeframes[tf] ?? [], incoming);
+          }
+        }
+        return await buildFromState(state, latest);
+      },
+      onStop: () => {
+        chartPollers.delete(key);
+        teardownCandleState(key);
+        previewInitialBuilt.delete(key);
+      },
+    });
+    chartPollers.set(key, handle);
+  }
+
+  const built = previewInitialBuilt.get(key);
+  if (built !== undefined && !handle.hasData()) push(JSON.stringify({ type: "data", data: { built } }));
   return handle.subscribe(push);
 }

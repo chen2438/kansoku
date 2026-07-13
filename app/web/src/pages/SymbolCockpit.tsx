@@ -1,40 +1,28 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowLeft, ChevronsRight } from "lucide-react";
-import type { BenchmarkSeries, CockpitPosition, RelativeVolume } from "../../../shared/types";
-import { useQuery } from "../apiHooks";
 import { IntradayDashboard, IntradayTimeframeSwitch } from "../charts/intraday/IntradayDashboard";
-import { client } from "../client";
-import { NewsTab } from "../charts/intraday/tabs/NewsTab";
-import { PredictionTab } from "../charts/intraday/tabs/PredictionTab";
 import { resolveIntradayTf, useIntradayDoc } from "../charts/intraday/useIntradayDoc";
 import type { SidebarTab } from "../charts/SidebarTabs";
 import { SepaDashboard } from "../charts/sepa/SepaDashboard";
 import { TopbarQuote } from "../QuoteBar";
 import { recordRecentSymbol } from "../recentCharts";
-import { Badge, Dot, Empty, ErrorBox, MarketTime } from "../ui";
+import { Dot, Empty, ErrorBox, MarketTime } from "../ui";
 import { useTitle } from "../useTitle";
-import { useSSE } from "../useSSE";
-import { AiTab } from "./cockpit/AiTab";
 import { AnalysisTimeline } from "./cockpit/AnalysisTimeline";
 import { ChatDock } from "./cockpit/chat/ChatDock";
-import { EnvTab } from "./cockpit/EnvTab";
-import { FlowTab } from "./cockpit/FlowTab";
-import { GenerateAnalysis } from "./cockpit/GenerateAnalysis";
-import { ReviewTab, type ReviewSection } from "./cockpit/ReviewTab";
+import { PreviewCockpit } from "./cockpit/PreviewCockpit";
+import { PredictionTab } from "../charts/intraday/tabs/PredictionTab";
+import { buildSharedSidebarTabs } from "./cockpit/sharedSidebarTabs";
+import { useAiUnreadBadge } from "./cockpit/useAiUnreadBadge";
 import { useCockpitComments } from "./cockpit/useCockpitComments";
+import { useCockpitEnv } from "./cockpit/useCockpitEnv";
+import { useCockpitReviewState } from "./cockpit/useCockpitReviewState";
 import { useLatestAnalysis } from "./cockpit/useLatestAnalysis";
-import type { SymbolValidation } from "../../../packages/core/src/contract/symbols.js";
-
-interface PositionPayload {
-  position: CockpitPosition | null;
-  relvol: RelativeVolume | null;
-}
 
 export function SymbolCockpit({ sym }: { sym: string }) {
   const symLabel = sym.toUpperCase().replace(/\.US$/, "");
   const { mode, activeId: latestId, latestChecked, latestError, hasNewer, jumpToLatest, goToAnalysis, analyses } =
     useLatestAnalysis(sym);
-  const validation = useQuery<SymbolValidation>(`symbols.validate:${sym}`, () => client.symbols.validate({ sym }));
 
   const { doc, error, degraded, canLoadForward, loadForward, forwardBusy, intradayTf, setIntradayTf, loadHistory } =
     useIntradayDoc(latestId);
@@ -42,81 +30,31 @@ export function SymbolCockpit({ sym }: { sym: string }) {
   useTitle(doc?.title ?? symLabel);
 
   useEffect(() => {
-    if (doc) recordRecentSymbol(sym);
-  }, [sym, doc?.id]);
+    if (doc || (latestChecked && !latestId && !latestError)) recordRecentSymbol(sym);
+  }, [sym, doc?.id, latestChecked, latestId, latestError]);
 
-  const [position, setPosition] = useState<CockpitPosition | null>(null);
-  const [relvol, setRelvol] = useState<RelativeVolume | null>(null);
-  const [benchmark, setBenchmark] = useState<BenchmarkSeries[] | null>(null);
-  useEffect(() => {
-    setPosition(null);
-    setRelvol(null);
-    setBenchmark(null);
-  }, [sym]);
-  const { degraded: positionDegraded } = useSSE<PositionPayload>({ kind: "position", symbol: sym }, (d) => {
-    setPosition(d.position);
-    setRelvol(d.relvol);
-  });
-  const { degraded: benchmarkDegraded } = useSSE<BenchmarkSeries[]>({ kind: "benchmark", symbol: sym }, setBenchmark);
-  const positionError = positionDegraded ? "持仓数据获取失败，正在重试" : null;
-  const benchmarkError = benchmarkDegraded ? "环境对照数据获取失败，正在重试" : null;
-
-  const { data: journal } = useQuery<{ name: string; date: string }[]>(`symbols.journal:${sym}`, () =>
-    client.symbols.journal({ sym }),
-  );
+  const env = useCockpitEnv(sym);
+  const { journalEntries, reviewSection, setReviewSection, selectedJournal, setSelectedJournal } =
+    useCockpitReviewState(sym);
 
   const [activeTab, setActiveTab] = useState("prediction");
-  const [reviewSection, setReviewSection] = useState<ReviewSection>("history");
-  const [selectedJournal, setSelectedJournal] = useState<string | null>(null);
-  useEffect(() => {
-    setSelectedJournal(null);
-    setReviewSection("history");
-  }, [sym]);
-  const journalEntries = journal ?? [];
   const { comments, error: commentsError, loaded: commentsLoaded } = useCockpitComments(sym);
-
-  const warnAlertCount = comments.reduce((n, c) => (c.level === "warn" || c.level === "alert" ? n + 1 : n), 0);
-  const [readCount, setReadCount] = useState<number | null>(null);
-  useEffect(() => {
-    setReadCount(null);
-  }, [sym]);
-  useEffect(() => {
-    if (commentsLoaded && readCount === null) setReadCount(warnAlertCount);
-  }, [commentsLoaded, readCount, warnAlertCount]);
-  useEffect(() => {
-    if (activeTab === "ai") setReadCount(warnAlertCount);
-  }, [activeTab, warnAlertCount]);
-  const unread = activeTab === "ai" || readCount === null ? 0 : Math.max(0, warnAlertCount - readCount);
-
-  const latestAlert = useMemo(() => {
-    for (let i = comments.length - 1; i >= 0; i--) {
-      const c = comments[i];
-      if (c.level === "warn" || c.level === "alert") return c;
-    }
-    return null;
-  }, [comments]);
+  const { unread, latestAlert } = useAiUnreadBadge(sym, comments, commentsLoaded, activeTab);
 
   if (latestChecked && !latestId) {
-    return (
-      <div className="page">
-        <h1>{sym}</h1>
-        {latestError ? (
+    if (latestError)
+      return (
+        <div className="page">
+          <h1>{sym}</h1>
           <ErrorBox>{latestError}</ErrorBox>
-        ) : validation.error ? (
-          <ErrorBox>{validation.error}</ErrorBox>
-        ) : (
-          <>
-            <Empty>这个标的还没有 intraday 分析——点下面按钮让 AI 生成，或跑一次 intraday-signal</Empty>
-            {validation.data ? <><div className="symbol-source"><Badge>{validation.data.source}</Badge><span>{validation.data.marketType}</span>{validation.data.contractType && <span>{validation.data.contractType}</span>}{validation.data.underlyingType && <span>{validation.data.underlyingType}</span>}</div><GenerateAnalysis sym={sym} /></> : <Empty>正在验证数据源…</Empty>}
-          </>
-        )}
-        <p>
-          <a href="/">
-            <ArrowLeft className="icon" size={13} /> 返回列表
-          </a>
-        </p>
-      </div>
-    );
+          <p>
+            <a href="/">
+              <ArrowLeft className="icon" size={13} /> 返回列表
+            </a>
+          </p>
+        </div>
+      );
+    return <PreviewCockpit sym={sym} />;
   }
 
   if (error) {
@@ -165,8 +103,6 @@ export function SymbolCockpit({ sym }: { sym: string }) {
     );
 
   const activeIntradayTf = resolveIntradayTf(doc.built, intradayTf);
-  const s = doc.built.sidebar;
-  const hasNews = Boolean(s.context?.news?.length) || Boolean(s.news?.length);
   const analysesRows = analyses;
 
   const sidebarTabs: SidebarTab[] = [
@@ -182,48 +118,22 @@ export function SymbolCockpit({ sym }: { sym: string }) {
         />
       ),
     },
-    {
-      key: "env",
-      label: "环境",
-      content: (
-        <>
-          <EnvTab
-            position={position}
-            positionError={positionError}
-            benchmark={benchmark}
-            benchmarkError={benchmarkError}
-            relvol={relvol}
-          />
-          <FlowTab symbol={sym} />
-        </>
-      ),
-    },
-    { key: "news", label: "消息", hidden: !hasNews, content: <NewsTab context={s.context} news={s.news ?? []} /> },
-    {
-      key: "review",
-      label: "复盘",
-      content: (
-        <ReviewTab
-          symbol={sym}
-          rows={analysesRows}
-          currentId={latestId}
-          journal={journalEntries}
-          section={reviewSection}
-          onSectionChange={setReviewSection}
-          selectedJournal={selectedJournal}
-          onSelectJournal={setSelectedJournal}
-        />
-      ),
-    },
-    {
-      key: "ai",
-      label: (
-        <>
-          AI 点评{unread > 0 && <Badge tone="down" className="unread-badge">{unread}</Badge>}
-        </>
-      ),
-      content: <AiTab symbol={sym} comments={comments} error={commentsError} loaded={commentsLoaded} />,
-    },
+    ...buildSharedSidebarTabs({
+      sym,
+      sidebar: doc.built.sidebar,
+      env,
+      analysesRows,
+      latestId,
+      journalEntries,
+      reviewSection,
+      setReviewSection,
+      selectedJournal,
+      setSelectedJournal,
+      comments,
+      commentsError,
+      commentsLoaded,
+      unread,
+    }),
   ];
 
   return (

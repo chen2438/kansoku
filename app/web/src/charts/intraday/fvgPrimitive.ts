@@ -1,18 +1,18 @@
 import type {
   IChartApiBase,
+  IPrimitivePaneRenderer,
+  IPrimitivePaneView,
   ISeriesApi,
   ISeriesPrimitive,
-  ISeriesPrimitivePaneRenderer,
-  ISeriesPrimitivePaneView,
+  PrimitivePaneViewZOrder,
   SeriesAttachedParameter,
-  SeriesPrimitivePaneViewZOrder,
   Time,
 } from "lightweight-charts";
 import type { IntradayFvgZone } from "../../../../shared/types";
 import { theme } from "../../theme";
 import { priceStr } from "../../format";
 
-type DrawTarget = Parameters<ISeriesPrimitivePaneRenderer["draw"]>[0];
+type DrawTarget = Parameters<IPrimitivePaneRenderer["draw"]>[0];
 
 const FILL_ALPHA = 0.1;
 const STROKE_ALPHA = 0.55;
@@ -34,7 +34,7 @@ interface RectPx {
   label: string;
 }
 
-class FvgRenderer implements ISeriesPrimitivePaneRenderer {
+class FvgRenderer implements IPrimitivePaneRenderer {
   constructor(private readonly rects: RectPx[]) {}
 
   draw(target: DrawTarget): void {
@@ -62,7 +62,7 @@ class FvgRenderer implements ISeriesPrimitivePaneRenderer {
   }
 }
 
-class FvgPaneView implements ISeriesPrimitivePaneView {
+class FvgPaneView implements IPrimitivePaneView {
   private rects: RectPx[] = [];
 
   constructor(private readonly source: FvgPrimitive) {}
@@ -99,11 +99,11 @@ class FvgPaneView implements ISeriesPrimitivePaneView {
     }
   }
 
-  renderer(): ISeriesPrimitivePaneRenderer {
+  renderer(): IPrimitivePaneRenderer {
     return new FvgRenderer(this.rects);
   }
 
-  zOrder(): SeriesPrimitivePaneViewZOrder {
+  zOrder(): PrimitivePaneViewZOrder {
     return "bottom";
   }
 }
@@ -138,7 +138,7 @@ export class FvgPrimitive implements ISeriesPrimitive<Time> {
     this.paneView.update();
   }
 
-  paneViews(): readonly ISeriesPrimitivePaneView[] {
+  paneViews(): readonly IPrimitivePaneView[] {
     return [this.paneView];
   }
 
