@@ -15,6 +15,7 @@ import { QuickBar } from "./home/QuickBar";
 import { RecapBoard } from "./home/RecapBoard";
 import { WatchBoard } from "./home/WatchBoard";
 import { BinanceTopAnalysis } from "./home/BinanceTopAnalysis";
+import { BinancePositionsCard } from "./home/BinancePositionsCard";
 
 const SESSION_LABEL: Record<string, string> = { pre: "盘前", regular: "盘中", post: "盘后", overnight: "休市" };
 const NOTICE_LABEL: Record<string, string> = { "chart-not-found": "该图表不存在，已为你返回首页" };
@@ -95,16 +96,20 @@ export function Home() {
           <div className="home-side">
             {trading ? (
               <>
-                <SectionTitle>持仓</SectionTitle>
+                <SectionTitle>长桥持仓</SectionTitle>
                 <PositionsCard portfolio={portfolio} error={portfolioError} watching={watching} />
+                <SectionTitle>Binance 持仓</SectionTitle>
+                <BinancePositionsCard />
                 <RecapBoard date={date} defaultExpanded={false} />
               </>
             ) : isToday ? (
               <>
                 <SectionTitle>看盘（定格）</SectionTitle>
                 <WatchBoard board={board!} error={boardError} compact />
-                <SectionTitle>持仓</SectionTitle>
+                <SectionTitle>长桥持仓</SectionTitle>
                 <PositionsCard portfolio={portfolio} error={portfolioError} watching={watching} />
+                <SectionTitle>Binance 持仓</SectionTitle>
+                <BinancePositionsCard />
                 <CrossSectionCharts date={date} />
               </>
             ) : (

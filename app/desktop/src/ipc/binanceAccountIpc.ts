@@ -32,6 +32,11 @@ export class BinanceAccountIpc extends IpcService implements WrapEnvelope<Binanc
   }
 
   @IpcMethod()
+  closedPositionHistory() {
+    return toEnvelope("binanceAccount.closedPositionHistory", () => binanceAccountService.closedPositionHistory());
+  }
+
+  @IpcMethod()
   openOrders() {
     return toEnvelope("binanceAccount.openOrders", () => binanceAccountService.openOrders());
   }
@@ -44,6 +49,11 @@ export class BinanceAccountIpc extends IpcService implements WrapEnvelope<Binanc
   @IpcMethod()
   closeTestnetPosition(input: Parameters<BinanceAccountApi["closeTestnetPosition"]>[0]) {
     return toEnvelope("binanceAccount.closeTestnetPosition", () => binanceAccountService.closeTestnetPosition(input));
+  }
+
+  @IpcMethod()
+  closeAllTestnetPositions(input: Parameters<BinanceAccountApi["closeAllTestnetPositions"]>[0]) {
+    return toEnvelope("binanceAccount.closeAllTestnetPositions", () => binanceAccountService.closeAllTestnetPositions(input));
   }
 
   @IpcMethod()

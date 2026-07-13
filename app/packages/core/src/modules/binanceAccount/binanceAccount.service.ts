@@ -9,7 +9,9 @@ import {
   type BinanceAccountCreds,
   binanceAccountBalance,
   binanceCancelTestnetOrder,
+  binanceCloseAllTestnetPositions,
   binanceCloseTestnetPosition,
+  binanceClosedPositionHistory,
   binanceOpenOrders,
   binancePing,
   binancePlaceTestnetOrder,
@@ -93,6 +95,12 @@ export const binanceAccountService: BinanceAccountApi = {
     return binancePositions(creds);
   },
 
+  async closedPositionHistory() {
+    const creds = await loadCreds();
+    requireCreds(creds);
+    return binanceClosedPositionHistory(creds);
+  },
+
   async openOrders() {
     const creds = await loadCreds();
     requireCreds(creds);
@@ -109,6 +117,12 @@ export const binanceAccountService: BinanceAccountApi = {
     const creds = await loadCreds();
     requireCreds(creds);
     return binanceCloseTestnetPosition(creds, input);
+  },
+
+  async closeAllTestnetPositions(input) {
+    const creds = await loadCreds();
+    requireCreds(creds);
+    return binanceCloseAllTestnetPositions(creds, input);
   },
 
   async cancelTestnetOrder(input) {
