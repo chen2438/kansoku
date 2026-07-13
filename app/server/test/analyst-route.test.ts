@@ -51,7 +51,19 @@ describe("Binance Top volume analysis routes", () => {
     const res = await tsukiRequest("/api/symbols/binance/top-volume-analysis", { method: "POST" });
     expect(res.status).toBe(200);
     expect((await res.json()).data.id).toBe("batch-1");
-    expect(batch.startBinanceTopAnalysis).toHaveBeenCalledTimes(1);
+    expect(batch.startBinanceTopAnalysis).toHaveBeenCalledWith({});
+  });
+
+  it("forwards an explicitly confirmed analysis-and-trade request", async () => {
+    models.aiConfig.mockReturnValue({ commentModel: null, analystModel: { id: "m" } });
+    batch.startBinanceTopAnalysis.mockResolvedValue({ id: "batch-2", mode: "analysis_and_trade", status: "running", startedAt: "now", items: [] });
+    const res = await tsukiRequest("/api/symbols/binance/top-volume-analysis", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ autoTrade: true, confirmed: true }),
+    });
+    expect(res.status).toBe(200);
+    expect(batch.startBinanceTopAnalysis).toHaveBeenCalledWith({ autoTrade: true, confirmed: true });
   });
 
   it("returns the current batch status", async () => {

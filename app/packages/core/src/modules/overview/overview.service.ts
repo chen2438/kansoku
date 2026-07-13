@@ -7,7 +7,7 @@ import { ClientError } from "../../errors.js";
 import { normalizeQuote } from "../../realtime/quotes.js";
 import { buildOverviewBoard, latestPerSymbol } from "../../services/cockpit/board.js";
 import { attachRMultiple, judgeOutcome, zoneFromPrediction } from "../../services/cockpit/outcome.js";
-import { getResolvedOutcomes, saveResolvedOutcome } from "../../services/cockpit/outcomeCache.js";
+import { backfillOutcomeEntered, getResolvedOutcomes, saveResolvedOutcome } from "../../services/cockpit/outcomeCache.js";
 import { aggregateStats, type StatsRow } from "../../services/cockpit/stats.js";
 import { getProvider } from "../../services/marketdata/registry.js";
 import { easternDate } from "../../services/session.js";
@@ -175,7 +175,15 @@ export const overviewService: OverviewApi = {
     const docs = await Promise.all(metas.map((m) => loadChart(m.id)));
     const cached = await getResolvedOutcomes(metas.map((m) => m.id));
 
-    const symbolsNeedingBars = [...new Set(metas.filter((m) => !cached.has(m.id)).map((m) => m.symbol!))];
+    const dirOf = (i: number) => (docs[i]?.input.prediction as IntradayPrediction | null | undefined)?.direction;
+    // 需要 K 线：①没缓存要现算；②有缓存但方向性且缺触发状态（老数据回填 entered）。
+    const needsBars = (i: number): boolean => {
+      const c = cached.get(metas[i].id);
+      if (!c) return true;
+      const dir = dirOf(i);
+      return (dir === "long" || dir === "short") && c.entered == null;
+    };
+    const symbolsNeedingBars = [...new Set(metas.filter((_, i) => needsBars(i)).map((m) => m.symbol!))];
     const barsBySymbol = new Map<string, RawBar[] | null>();
     await Promise.all(
       symbolsNeedingBars.map(async (symbol) => {
@@ -192,29 +200,56 @@ export const overviewService: OverviewApi = {
       const prediction = (doc?.input.prediction as IntradayPrediction | null | undefined) ?? null;
       if (!prediction?.direction) return;
       const anchor = prediction.anchor ? { time: prediction.anchor.time, price: prediction.anchor.price } : null;
-      const plan =
-        doc && doc.built.kind === "intraday" && doc.built.entryPlan
-          ? { entry: doc.built.entryPlan.entry, stop: doc.built.entryPlan.stop, target1: doc.built.entryPlan.target1 }
-          : null;
+      const ep = doc && doc.built.kind === "intraday" ? doc.built.entryPlan : null;
+      const plan = ep
+        ? { entry: ep.entry, stop: ep.stop, target1: ep.target1, entry_kind: ep.entry_kind ?? null, trigger: ep.trigger ?? null }
+        : null;
+      const bars = barsBySymbol.get(meta.symbol!) ?? null;
+      const zone = zoneFromPrediction(prediction);
       let outcome = attachRMultiple(cached.get(meta.id) ?? null, prediction.direction, plan);
       if (!outcome) {
-        const bars = barsBySymbol.get(meta.symbol!) ?? null;
-        outcome = anchor && bars ? judgeOutcome(prediction.direction, anchor, plan, bars, zoneFromPrediction(prediction)) : null;
+        outcome = anchor && bars ? judgeOutcome(prediction.direction, anchor, plan, bars, zone) : null;
         if (outcome && outcome.status !== "open") {
           void saveResolvedOutcome(
             { chartId: meta.id, symbol: meta.symbol!, direction: prediction.direction },
             outcome,
           ).catch(() => {});
         }
+      } else if (
+        outcome.entered == null &&
+        (prediction.direction === "long" || prediction.direction === "short") &&
+        anchor &&
+        bars
+      ) {
+        // 老数据回填：用现有 K 线重算 entered，status/resolved 仍取缓存的冻结值。
+        const rejudged = judgeOutcome(prediction.direction, anchor, plan, bars, zone);
+        if (rejudged) {
+          outcome = { ...outcome, entered: rejudged.entered ?? null };
+          if (rejudged.entered != null) void backfillOutcomeEntered(meta.id, rejudged.entered).catch(() => {});
+        }
       }
       rows.push({
         direction: prediction.direction,
         origin: doc?.input.origin === "analyst" ? "analyst" : "manual",
         outcome,
+        ts: meta.created_at,
       });
     });
 
-    return aggregateStats(rows);
+    const now = Date.now();
+    const todayE = easternDate(new Date(now));
+    const dayMs = 86_400_000;
+    const since = (days: number) => rows.filter((r) => r.ts != null && now - new Date(r.ts).getTime() <= days * dayMs);
+    return {
+      windows: {
+        today: aggregateStats(rows.filter((r) => r.ts != null && easternDate(new Date(r.ts)) === todayE)),
+        d3: aggregateStats(since(3)),
+        d7: aggregateStats(since(7)),
+        d30: aggregateStats(since(30)),
+        d90: aggregateStats(since(90)),
+        all: aggregateStats(rows),
+      },
+    };
   },
 
   async usage(input) {

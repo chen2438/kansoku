@@ -18,8 +18,11 @@ const DEBOUNCE_MS = 250;
 const PUSH_FRESH_WINDOW_MS = 3_000;
 
 function chartIntervalMs(key?: string): number {
-  const session = classifySession(Math.floor(Date.now() / 1000));
   const state = key ? candleStates.get(key) : undefined;
+  // Binance 是 24 小时市场，不该按美股时段降频（否则美股收盘后图表每 5 分钟
+  // 才刷一次，价格严重滞后）——始终按常规盘档（15 秒）刷新。
+  const session =
+    state && isBinanceSymbol(state.symbol) ? "regular" : classifySession(Math.floor(Date.now() / 1000));
   const now = Date.now();
   const lastPushAt = state?.lastPushAt ?? null;
   if (state) {
@@ -40,6 +43,7 @@ function predictionFields(doc: ChartDoc) {
 
 interface CandleState {
   id: string;
+  symbol: string;
   viewCount: number | undefined;
   timeframes: Partial<Record<TimeframeKey, RawBar[]>>;
   lastPushAt: number | null;
@@ -98,6 +102,7 @@ function setupCandleState(key: string, id: string, viewCount: number | undefined
   if (typeof symbol !== "string" || !symbol) return;
   const state: CandleState = {
     id,
+    symbol,
     viewCount,
     timeframes: Object.fromEntries(
       Object.entries((doc.input as Record<string, unknown>).timeframes as Partial<Record<TimeframeKey, RawBar[]>>)
@@ -144,7 +149,14 @@ export async function subscribeChart(id: string, push: (envelope: string) => voi
     push(JSON.stringify({ type: "data", data: { built: doc.built, ...predictionFields(doc) } }));
   }
 
-  if (!LIVE_TYPES.has(doc.type) || !refreshBody(doc.type, doc.input) || !isCurrentSessionId(id)) return () => {};
+  // 美股图表按"当日 session"关闭实时刷新（隔日 id 不再是当前 session 就冻结成历史快照）。
+  // 但 Binance 是 24 小时连续市场，chart id 里的 sessionDate 只是创建时最后一根 K 线的日期，
+  // 一旦 ET/UTC 跨日、或最后一根 K 线的 UTC 日期与 ET 日期不一致，isCurrentSessionId 就会变 false，
+  // 导致轮询器根本不启动、价格永远停在分析时刻。Binance 品种不受 session 边界约束，始终允许实时刷新。
+  const rawSymbol = (doc.input as Record<string, unknown>).symbol;
+  const docSymbol = typeof rawSymbol === "string" ? rawSymbol : "";
+  const sessionCurrent = isBinanceSymbol(docSymbol) || isCurrentSessionId(id);
+  if (!LIVE_TYPES.has(doc.type) || !refreshBody(doc.type, doc.input) || !sessionCurrent) return () => {};
 
   const key = viewCount === undefined ? id : `${id}#${viewCount}`;
   let handle = chartPollers.get(key);

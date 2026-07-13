@@ -62,6 +62,8 @@ export const outcomes = sqliteTable("outcomes", {
   pctSinceAnchor: real("pct_since_anchor").notNull(),
   resolvedAt: integer("resolved_at").notNull(),
   judgedAt: text("judged_at").notNull(),
+  // 入场是否触发：1=已触发 / 0=未触发 / null=无法判定或老数据未回填。
+  entered: integer("entered"),
 });
 
 export const chatSessions = sqliteTable(

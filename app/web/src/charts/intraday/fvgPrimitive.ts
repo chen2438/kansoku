@@ -68,7 +68,7 @@ class FvgPaneView implements ISeriesPrimitivePaneView {
   constructor(private readonly source: FvgPrimitive) {}
 
   update(): void {
-    const { chart, series, zones } = this.source.state();
+    const { chart, series, zones, decimals } = this.source.state();
     this.rects = [];
     if (!chart || !series || zones.length === 0) return;
     const ts = chart.timeScale();
@@ -94,7 +94,7 @@ class FvgPaneView implements ISeriesPrimitivePaneView {
         yBottom: Math.max(yA, yB),
         fill: hexToRgba(base, FILL_ALPHA),
         stroke: hexToRgba(base, STROKE_ALPHA),
-        label: `$${priceStr((z.high + z.low) / 2)}`,
+        label: `$${priceStr((z.high + z.low) / 2, decimals)}`,
       });
     }
   }
@@ -113,6 +113,7 @@ export class FvgPrimitive implements ISeriesPrimitive<Time> {
   private series: ISeriesApi<"Candlestick"> | null = null;
   private requestUpdate?: () => void;
   private zones: IntradayFvgZone[] = [];
+  private decimals = 2;
   private readonly paneView = new FvgPaneView(this);
 
   attached(param: SeriesAttachedParameter<Time>): void {
@@ -127,8 +128,9 @@ export class FvgPrimitive implements ISeriesPrimitive<Time> {
     this.requestUpdate = undefined;
   }
 
-  setData(zones: IntradayFvgZone[]): void {
+  setData(zones: IntradayFvgZone[], decimals = 2): void {
     this.zones = zones;
+    this.decimals = decimals;
     this.requestUpdate?.();
   }
 
@@ -140,7 +142,12 @@ export class FvgPrimitive implements ISeriesPrimitive<Time> {
     return [this.paneView];
   }
 
-  state(): { chart: IChartApiBase<Time> | null; series: ISeriesApi<"Candlestick"> | null; zones: IntradayFvgZone[] } {
-    return { chart: this.chart, series: this.series, zones: this.zones };
+  state(): {
+    chart: IChartApiBase<Time> | null;
+    series: ISeriesApi<"Candlestick"> | null;
+    zones: IntradayFvgZone[];
+    decimals: number;
+  } {
+    return { chart: this.chart, series: this.series, zones: this.zones, decimals: this.decimals };
   }
 }

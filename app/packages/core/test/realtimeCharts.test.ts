@@ -208,4 +208,62 @@ describe("subscribeChart candlestick-push wiring", () => {
     expect(input.timeframes.m5[1].time).toBe(new Date(4_000).toISOString());
     unsub();
   });
+
+  it("keeps a Binance chart live even when its session-date id is stale (24h market, no session boundary)", async () => {
+    // A US-equity chart with a non-today session-date id freezes into a historical
+    // snapshot. Binance is a 24h continuous market, so it must keep polling regardless.
+    store.loadChart.mockResolvedValue(
+      makeDoc({
+        id: "2020-01-01-btcusdt-intraday",
+        symbol: "BTCUSDT",
+        input: { symbol: "BTCUSDT", timeframes: makeDoc().input.timeframes as Record<string, unknown> },
+      }),
+    );
+    build.refreshBody.mockReturnValue({ type: "intraday", symbol: "BTCUSDT" });
+    build.buildChart.mockResolvedValue({ input: { timeframes: {} }, built: { kind: "intraday", polled: true } });
+
+    const unsub = await subscribeChart("2020-01-01-btcusdt-intraday", () => {});
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Binance never wires the longbridge push stream, but the safety-net poller runs —
+    // proving the session-date guard was bypassed for the 24h market.
+    expect(longbridgeStream.subscribeCandlesticks).not.toHaveBeenCalled();
+    expect(build.buildChart).toHaveBeenCalled();
+    unsub();
+  });
+
+  it("polls Binance charts every 15 seconds even during the US overnight session", async () => {
+    vi.setSystemTime(new Date("2026-07-13T01:05:00Z"));
+    store.loadChart.mockResolvedValue(
+      makeDoc({
+        id: "2026-07-12-btcusdt-intraday",
+        symbol: "BTCUSDT",
+        input: { symbol: "BTCUSDT", timeframes: makeDoc().input.timeframes as Record<string, unknown> },
+      }),
+    );
+    build.refreshBody.mockReturnValue({ type: "intraday", symbol: "BTCUSDT" });
+    build.buildChart.mockResolvedValue({ input: { timeframes: {} }, built: { kind: "intraday", polled: true } });
+
+    const unsub = await subscribeChart("2026-07-12-btcusdt-intraday", () => {});
+    await vi.advanceTimersByTimeAsync(0);
+    expect(build.buildChart).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(14_999);
+    expect(build.buildChart).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(build.buildChart).toHaveBeenCalledTimes(2);
+    unsub();
+  });
+
+  it("freezes a non-Binance chart whose session-date id is stale", async () => {
+    store.loadChart.mockResolvedValue(makeDoc({ id: "2020-01-01-nvda-intraday" }));
+
+    const unsub = await subscribeChart("2020-01-01-nvda-intraday", () => {});
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(build.buildChart).not.toHaveBeenCalled();
+    expect(longbridgeStream.subscribeCandlesticks).not.toHaveBeenCalled();
+    unsub();
+  });
 });

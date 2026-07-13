@@ -6,12 +6,21 @@ export const money = (x: number, d = 2) => `$${x.toFixed(d)}`;
 
 export const upDown = (x: number) => (x >= 0 ? "up" : "down");
 
-// 价格小数位随量级变化：美股/BTC/ETH 等 $1 以上保持 2 位不变，
-// Binance 低价币（WLD 0.41、DOGE 0.16 等）自动给更细的精度，
-// 否则入场/止损/目标会被压成同一个 $0.40 分不出来。
-export function priceDecimals(price: number): number {
+// Binance 品种（无交易所后缀，如 XRPUSDT）扩位；美股（NVDA.US 等）保持 2 位。
+export const isCryptoSymbol = (symbol: string | null | undefined): boolean =>
+  typeof symbol === "string" && symbol.length > 0 && !symbol.includes(".");
+
+// 价格小数位随量级变化。
+// - 美股：$1 以上保持 2 位（tick 0.01），$1 以下才细化。
+// - Binance（crypto=true）：所有品种按 ~5 位有效数字统一扩位——XRP 1.09→4 位、
+//   ETH 1812→2 位、WLD 0.41→5 位、SXT 0.0093→7 位，避免入场/止损/目标被压成同一个数。
+export function priceDecimals(price: number, crypto = false): number {
   const abs = Math.abs(price);
-  if (!Number.isFinite(abs) || abs === 0) return 2;
+  if (!Number.isFinite(abs) || abs === 0) return crypto ? 4 : 2;
+  if (crypto) {
+    const exp = Math.floor(Math.log10(abs));
+    return Math.min(8, Math.max(2, 4 - exp));
+  }
   if (abs >= 1) return 2;
   if (abs >= 0.1) return 4;
   if (abs >= 0.01) return 5;

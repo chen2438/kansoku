@@ -63,8 +63,8 @@ export class SymbolsIpc extends IpcService implements WrapEnvelope<SymbolsApi> {
   }
 
   @IpcMethod()
-  binanceTopAnalysisStart() {
-    return toEnvelope("symbols.binanceTopAnalysisStart", () => symbolsService.binanceTopAnalysisStart());
+  binanceTopAnalysisStart(input?: Parameters<SymbolsApi["binanceTopAnalysisStart"]>[0]) {
+    return toEnvelope("symbols.binanceTopAnalysisStart", () => symbolsService.binanceTopAnalysisStart(input ?? {}));
   }
 
   @IpcMethod()

@@ -1,9 +1,25 @@
-import type { AnalysisOutcome, IntradayPrediction, OutcomeStatus, RawBar } from "../../../../../shared/types.js";
+import type { AnalysisOutcome, EntryKind, IntradayPrediction, OutcomeStatus, RawBar } from "../../../../../shared/types.js";
 
 export interface OutcomePlan {
   entry?: number;
   stop?: number;
   target1?: number;
+  entry_kind?: EntryKind | null;
+  trigger?: number | null;
+}
+
+// 入场"成交价"：突破型在触发位成交（缺省回退到 entry），回踩/普通型在 entry 成交。
+function fillLevel(plan: OutcomePlan): number | undefined {
+  if (plan.entry_kind === "breakout" && plan.trigger != null) return plan.trigger;
+  return plan.entry;
+}
+
+// 某根 K 线是否触及入场成交价（即限价/触发单会不会成交）。
+function barFills(direction: "long" | "short", plan: OutcomePlan, high: number, low: number): boolean {
+  if (plan.entry_kind === "market") return true;
+  const level = fillLevel(plan);
+  if (level === undefined) return false;
+  return direction === "long" ? low <= level : high >= level;
 }
 
 // A neutral (range-bound) call resolves to held_range after one full regular
@@ -98,13 +114,21 @@ export function judgeOutcome(
 
   const following = bars.filter((bar) => toSec(bar.time) > anchorSec);
 
+  // 能否判定触发：市价单永远算触发；否则需要有成交价（entry/trigger）。
+  const canJudgeEntry = plan.entry_kind === "market" || fillLevel(plan) !== undefined;
+  // 逐根累积：入场成交价一旦被触及就保持 true（含结算那根，先成交再判命中/止损）。
+  let enteredSoFar = plan.entry_kind === "market";
+  const enteredFlag = () => (canJudgeEntry ? enteredSoFar : null);
+
   if (following.length === 0) {
-    return { status: "open", pct_since_anchor: 0, resolved_at: null };
+    return { status: "open", pct_since_anchor: 0, resolved_at: null, entered: enteredFlag() };
   }
 
+  const lastClose = Number(following[following.length - 1].close);
   for (const bar of following) {
     const high = Number(bar.high);
     const low = Number(bar.low);
+    enteredSoFar = enteredSoFar || barFills(direction, plan, high, low);
     const hitStop = direction === "long" ? low <= stop : high >= stop;
     const hitTarget = direction === "long" ? high >= target1 : low <= target1;
     // Same-bar collision: when both stop and target trigger inside one bar, the
@@ -112,21 +136,22 @@ export function judgeOutcome(
     if (hitStop) {
       return {
         status: "hit_stop",
-        pct_since_anchor: (Number(following[following.length - 1].close) / anchor.price - 1) * 100,
+        pct_since_anchor: (lastClose / anchor.price - 1) * 100,
         resolved_at: toSec(bar.time),
         r_multiple: rMultipleFor("hit_stop", direction, plan),
+        entered: enteredFlag(),
       };
     }
     if (hitTarget) {
       return {
         status: "hit_target",
-        pct_since_anchor: (Number(following[following.length - 1].close) / anchor.price - 1) * 100,
+        pct_since_anchor: (lastClose / anchor.price - 1) * 100,
         resolved_at: toSec(bar.time),
         r_multiple: rMultipleFor("hit_target", direction, plan),
+        entered: enteredFlag(),
       };
     }
   }
 
-  const lastClose = Number(following[following.length - 1].close);
-  return { status: "open", pct_since_anchor: (lastClose / anchor.price - 1) * 100, resolved_at: null };
+  return { status: "open", pct_since_anchor: (lastClose / anchor.price - 1) * 100, resolved_at: null, entered: enteredFlag() };
 }

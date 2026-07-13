@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChartBuilt, ChartDoc, IntradayBuilt, TimeframeKey } from "../../../../shared/types";
 import { useQuery } from "../../apiHooks";
 import { client } from "../../client";
+import { isCryptoSymbol } from "../../format";
 import { useSSE } from "../../useSSE";
 
 const LIVE_TYPES = new Set(["flow", "intraday"]);
@@ -55,7 +56,10 @@ export function useIntradayDoc(id: string | null) {
   docRef.current = doc;
   viewCountRef.current = viewCount;
 
-  const isCurrent = Boolean(id && isCurrentSessionId(id));
+  // Binance 是 24 小时连续市场，chart id 里的 sessionDate 只是创建时最后一根 K 线的日期，
+  // 隔日/跨时区就不再等于"今天"，会被误判成历史快照——所以 Binance 永远算"当前 session"：
+  // 直接走实时订阅（live=true），也就不需要"加载后续 K 线"这个补历史的按钮（canLoadForward=false）。
+  const isCurrent = isCryptoSymbol(doc?.symbol) || Boolean(id && isCurrentSessionId(id));
   const live = Boolean(id && doc && LIVE_TYPES.has(doc.type) && doc.symbol && isCurrent);
   const canLoadForward = Boolean(id && doc && LIVE_TYPES.has(doc.type) && doc.symbol && !isCurrent);
   const [forwardBusy, setForwardBusy] = useState(false);

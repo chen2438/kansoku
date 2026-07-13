@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import type { OverviewRecap, PredictionStats, StatsBucket } from "../../../../shared/types";
+import type { OverviewRecap, PredictionStats, StatsBucket, StatsWindowKey, WindowedPredictionStats } from "../../../../shared/types";
 import { signed } from "../../format";
 import { symbolAnalysisPath } from "../../../../shared/chartUrl";
 import { marketDate } from "../../../../shared/time";
 import { client } from "../../client";
+import { openSymbolContextMenu } from "../../desktop/newTab";
 import { Badge, Card, ErrorBox, MarketTime, Num, SectionTitle } from "../../ui";
 import { useIntervalFetch } from "../cockpit/useIntervalFetch";
 
@@ -41,18 +42,63 @@ function BucketLine({ label, bucket }: { label: string; bucket: StatsBucket }) {
   );
 }
 
+const STATS_WINDOWS: { key: StatsWindowKey; label: string }[] = [
+  { key: "today", label: "今天" },
+  { key: "d3", label: "近3天" },
+  { key: "d7", label: "近7天" },
+  { key: "d30", label: "近1月" },
+  { key: "d90", label: "近3月" },
+  { key: "all", label: "全部" },
+];
+
 function StatsBlock({ stats }: { stats: PredictionStats | null }) {
   if (!stats) return <div className="note-block">统计加载中…</div>;
-  if (stats.total === 0) return <div className="note-block">还没有可统计的预测。</div>;
+  if (stats.total === 0) return <div className="note-block">这个时间段还没有可统计的预测。</div>;
+  const tg = stats.by_trigger;
+  const enteredTotal = tg.entered.long.total + tg.entered.short.total;
+  const notEnteredTotal = tg.not_entered.long.total + tg.not_entered.short.total;
   return (
     <div className="overview-stats">
       <BucketLine label="全部预测" bucket={stats.overall} />
       <BucketLine label="做多" bucket={stats.by_direction.long} />
       <BucketLine label="做空" bucket={stats.by_direction.short} />
       <BucketLine label="观望" bucket={stats.by_direction.neutral} />
+      {enteredTotal > 0 && (
+        <>
+          {tg.entered.long.total > 0 && <BucketLine label="已触发·做多" bucket={tg.entered.long} />}
+          {tg.entered.short.total > 0 && <BucketLine label="已触发·做空" bucket={tg.entered.short} />}
+        </>
+      )}
+      {notEnteredTotal > 0 && (
+        <>
+          {tg.not_entered.long.total > 0 && <BucketLine label="未触发·做多（纸面）" bucket={tg.not_entered.long} />}
+          {tg.not_entered.short.total > 0 && <BucketLine label="未触发·做空（纸面）" bucket={tg.not_entered.short} />}
+        </>
+      )}
       <BucketLine label="AI 生成" bucket={stats.by_origin.analyst} />
       <BucketLine label="手动分析" bucket={stats.by_origin.manual} />
     </div>
+  );
+}
+
+function WindowedStatsBlock({ stats }: { stats: WindowedPredictionStats | null }) {
+  const [win, setWin] = useState<StatsWindowKey>("today");
+  return (
+    <>
+      <div className="stats-window-tabs">
+        {STATS_WINDOWS.map((w) => (
+          <button
+            key={w.key}
+            type="button"
+            className={`stats-window-tab${win === w.key ? " active" : ""}`}
+            onClick={() => setWin(w.key)}
+          >
+            {w.label}
+          </button>
+        ))}
+      </div>
+      <StatsBlock stats={stats ? stats.windows[win] : null} />
+    </>
   );
 }
 
@@ -61,7 +107,7 @@ function SettlementTable({ recap, emptyLabel }: { recap: OverviewRecap; emptyLab
   return (
     <div className="recap-settlements">
       {recap.settlements.map((s) => (
-        <Card link key={s.symbol} className="recap-row" href={symbolAnalysisPath(s.symbol, s.chart_id)}>
+        <Card link key={s.symbol} className="recap-row" href={symbolAnalysisPath(s.symbol, s.chart_id)} onContextMenu={(e) => openSymbolContextMenu(s.symbol, e)}>
           <span className="sym">{s.symbol.replace(/\.US$/, "")}</span>
           <span className="dir">{s.direction ? DIRECTION_LABEL[s.direction] : "—"}</span>
           {s.day_pct != null ? <Num value={s.day_pct} diff suffix="%" /> : <span>—</span>}
@@ -112,7 +158,7 @@ export function RecapBoard({ date, defaultExpanded }: { date: string; defaultExp
     () => client.overview.recap({ date }),
     isToday ? 5 * 60_000 : null,
   );
-  const { data: stats } = useIntervalFetch<PredictionStats>(
+  const { data: stats } = useIntervalFetch<WindowedPredictionStats>(
     expanded ? "overview.stats" : null,
     () => client.overview.stats(),
     5 * 60_000,
@@ -135,8 +181,8 @@ export function RecapBoard({ date, defaultExpanded }: { date: string; defaultExp
           {recap && (
             <>
               <SettlementTable recap={recap} emptyLabel={emptySettlements} />
-              <SectionTitle className="recap-subhead">预测战绩（全部历史）</SectionTitle>
-              <StatsBlock stats={stats} />
+              <SectionTitle className="recap-subhead">预测战绩</SectionTitle>
+              <WindowedStatsBlock stats={stats} />
               <SectionTitle className="recap-subhead">AI 活动</SectionTitle>
               <AiActivity recap={recap} costLabel={costLabel} emptyLabel={emptyAlerts} />
             </>

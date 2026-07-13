@@ -8,8 +8,11 @@ import { getAiRuntime } from "../../ai/initAiSettings.js";
 import {
   type BinanceAccountCreds,
   binanceAccountBalance,
+  binanceCancelTestnetOrder,
+  binanceCloseTestnetPosition,
   binanceOpenOrders,
   binancePing,
+  binancePlaceTestnetOrder,
   binancePositions,
 } from "../../services/marketdata/binanceAccount.js";
 
@@ -94,5 +97,23 @@ export const binanceAccountService: BinanceAccountApi = {
     const creds = await loadCreds();
     requireCreds(creds);
     return binanceOpenOrders(creds);
+  },
+
+  async placeTestnetOrder(input) {
+    const creds = await loadCreds();
+    requireCreds(creds);
+    return binancePlaceTestnetOrder(creds, input);
+  },
+
+  async closeTestnetPosition(input) {
+    const creds = await loadCreds();
+    requireCreds(creds);
+    return binanceCloseTestnetPosition(creds, input);
+  },
+
+  async cancelTestnetOrder(input) {
+    const creds = await loadCreds();
+    requireCreds(creds);
+    return binanceCancelTestnetOrder(creds, input);
   },
 };

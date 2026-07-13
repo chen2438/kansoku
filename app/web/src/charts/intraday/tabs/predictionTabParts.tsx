@@ -19,7 +19,7 @@ function BarTime({ value }: { value: number }) {
   return <MarketTime value={value} format="month-day-time" includeZone />;
 }
 
-export function Pattern123Item({ pat }: { pat: Pattern123 }) {
+export function Pattern123Item({ pat, decimals }: { pat: Pattern123; decimals?: number }) {
   const confirmed = pat.status === "confirmed";
   return (
     <div className="check-item signal">
@@ -32,14 +32,14 @@ export function Pattern123Item({ pat }: { pat: Pattern123 }) {
           </Badge>
         </div>
         <div className="check-val">
-          ① <BarTime value={pat.p1.time} /> ${priceStr(pat.p1.price)} <ArrowRight className="icon" size={12} /> ② $
-          {priceStr(pat.p2.price)} <ArrowRight className="icon" size={12} /> ③ <BarTime value={pat.p3.time} /> $
-          {priceStr(pat.p3.price)}
+          ① <BarTime value={pat.p1.time} /> ${priceStr(pat.p1.price, decimals)} <ArrowRight className="icon" size={12} /> ② $
+          {priceStr(pat.p2.price, decimals)} <ArrowRight className="icon" size={12} /> ③ <BarTime value={pat.p3.time} /> $
+          {priceStr(pat.p3.price, decimals)}
         </div>
         <div className="check-val">{pat.implication}</div>
         {confirmed && pat.confirm && (
           <div className="check-val">
-            <BarTime value={pat.confirm.time} /> 收盘 ${priceStr(pat.confirm.price)} 突破触发线 ${priceStr(pat.trigger)}
+            <BarTime value={pat.confirm.time} /> 收盘 ${priceStr(pat.confirm.price, decimals)} 突破触发线 ${priceStr(pat.trigger, decimals)}
           </div>
         )}
       </div>
@@ -47,7 +47,7 @@ export function Pattern123Item({ pat }: { pat: Pattern123 }) {
   );
 }
 
-export function AutoSignalItem({ kindKey, pair }: { kindKey: string; pair: DivergencePair }) {
+export function AutoSignalItem({ kindKey, pair, decimals }: { kindKey: string; pair: DivergencePair; decimals?: number }) {
   const meta = AUTO_SIGNAL_META[kindKey];
   if (!meta) return null;
   return (
@@ -56,8 +56,8 @@ export function AutoSignalItem({ kindKey, pair }: { kindKey: string; pair: Diver
       <div>
         <div className="check-label">{meta.title}</div>
         <div className="check-val">
-          <BarTime value={pair.a.time} /> ${priceStr(pair.a.price)} <ArrowRight className="icon" size={12} /> <BarTime value={pair.b.time} />{" "}
-          ${priceStr(pair.b.price)}
+          <BarTime value={pair.a.time} /> ${priceStr(pair.a.price, decimals)} <ArrowRight className="icon" size={12} /> <BarTime value={pair.b.time} />{" "}
+          ${priceStr(pair.b.price, decimals)}
         </div>
         <div className="check-val">{meta.impact}</div>
       </div>
@@ -65,7 +65,7 @@ export function AutoSignalItem({ kindKey, pair }: { kindKey: string; pair: Diver
   );
 }
 
-export function PriceZoneCard({ zone, compact = false }: { zone: IntradayPriceZone; compact?: boolean }) {
+export function PriceZoneCard({ zone, compact = false, decimals }: { zone: IntradayPriceZone; compact?: boolean; decimals?: number }) {
   const color = zone.color ?? theme.textSecondary;
   const isBand = Math.abs(zone.high - zone.low) >= 0.0001;
   return (
@@ -73,7 +73,7 @@ export function PriceZoneCard({ zone, compact = false }: { zone: IntradayPriceZo
       <div className="zone-head">
         <span className="zone-label">{zone.label}</span>
         <span className="zone-range">
-          {isBand ? `$${priceStr(zone.low)} - $${priceStr(zone.high)}` : `$${priceStr(zone.low)}`}
+          {isBand ? `$${priceStr(zone.low, decimals)} - $${priceStr(zone.high, decimals)}` : `$${priceStr(zone.low, decimals)}`}
         </span>
       </div>
       <div className="zone-meta">
@@ -85,14 +85,14 @@ export function PriceZoneCard({ zone, compact = false }: { zone: IntradayPriceZo
   );
 }
 
-export function TargetContextCard({ target }: { target: IntradayTargetContext }) {
+export function TargetContextCard({ target, decimals }: { target: IntradayTargetContext; decimals?: number }) {
   return (
     <div className="target-context">
       <div className="target-head">
         <span>{target.label}</span>
-        <span>${priceStr(target.price)}</span>
+        <span>${priceStr(target.price, decimals)}</span>
       </div>
-      {target.zone && <PriceZoneCard zone={target.zone} compact />}
+      {target.zone && <PriceZoneCard zone={target.zone} compact decimals={decimals} />}
       {target.note && <div className="zone-meta md">{target.note}</div>}
       {target.condition && <div className="zone-meta">条件：{target.condition}</div>}
     </div>
