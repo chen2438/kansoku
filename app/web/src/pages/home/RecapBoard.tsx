@@ -66,7 +66,7 @@ function StatsBlock({ stats }: { stats: PredictionStats | null }) {
 }
 
 function WindowedStatsBlock({ stats }: { stats: WindowedPredictionStats | null }) {
-  const [win, setWin] = useState<StatsWindowKey>("all");
+  const [win, setWin] = useState<StatsWindowKey>("today");
   return (
     <>
       <div className="stats-window-tabs">
