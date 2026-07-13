@@ -4,6 +4,8 @@ packages:
   - web
   - desktop
 autoInstallPeers: false
+# pnpm 11 在普通运行时默认开启、CI 时默认关闭；固定为关闭，避免两种模式轮流把 node_modules 判为过期并自动重装。
+enableGlobalVirtualStore: false
 ignoredOptionalDependencies:
   - esbuild
   - tsx

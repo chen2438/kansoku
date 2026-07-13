@@ -16,6 +16,11 @@ export class SymbolsController {
     return { ok: true, data: await symbolsService.binanceTopAnalysisStatus() };
   }
 
+  @Post("/binance/top-volume-analysis/automation/stop")
+  async stopBinanceTopAnalysisAutomation() {
+    return { ok: true, data: await symbolsService.binanceTopAnalysisAutomationStop() };
+  }
+
   @Get("/:sym/validate")
   async validate(@Param("sym") sym: string) { return { ok: true, data: await symbolsService.validate({ sym }) }; }
 

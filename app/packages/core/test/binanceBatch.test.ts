@@ -6,6 +6,7 @@ import {
   binanceTopAnalysisState,
   resetBinanceTopAnalysisForTests,
   startBinanceTopAnalysis,
+  stopBinanceTopAnalysisAutomation,
   type BinanceBatchDeps,
 } from "../src/ai/binanceBatch.js";
 
@@ -18,6 +19,7 @@ const leaders = [
 
 const noopTradingDeps = {
   prepareTrading: vi.fn(async () => {}),
+  existingPositionSymbols: vi.fn(async () => new Set<string>()),
   placeOrder: vi.fn(async () => { throw new Error("unexpected order"); }),
 };
 
@@ -55,6 +57,8 @@ describe("Binance Top volume analysis", () => {
 
     const started = await startBinanceTopAnalysis({}, deps);
     expect(started.mode).toBe("analysis");
+    expect(started.ranking).toBe("volume_top20");
+    expect(deps.leaders).toHaveBeenCalledWith("volume_top20");
     expect(started.items.map((item) => item.symbol)).toEqual(["BTCUSDT", "ETHUSDT", "SOLUSDT"]);
     const completed = await waitForCompletion();
     expect(completed.items.every((item) => item.status === "completed")).toBe(true);
@@ -64,6 +68,27 @@ describe("Binance Top volume analysis", () => {
       "chart-SOLUSDT",
     ]);
     expect(completed.items.every((item) => item.direction === "long" && item.entryStatus === "waiting")).toBe(true);
+  });
+
+  it("runs the selected gainers or losers ranking", async () => {
+    const leaderFn = vi.fn().mockResolvedValue([]);
+    const deps: BinanceBatchDeps = {
+      leaders: leaderFn,
+      analystModel: () => model,
+      run: vi.fn() as unknown as BinanceBatchDeps["run"],
+      latestSummary: async () => null,
+      ...noopTradingDeps,
+      now: () => 1_750_000_000_000,
+    };
+
+    const started = await startBinanceTopAnalysis({
+      autoTrade: true,
+      confirmed: true,
+      ranking: "gainers_top10",
+    }, deps);
+    expect(started.ranking).toBe("gainers_top10");
+    expect(leaderFn).toHaveBeenCalledWith("gainers_top10");
+    await waitForCompletion();
   });
 
   it("marks a run failed when no new chart is created", async () => {
@@ -132,6 +157,7 @@ describe("Binance Top volume analysis", () => {
       })) as BinanceBatchDeps["run"],
       latestSummary: async (symbol) => latest.has(symbol) ? { id: latest.get(symbol)!, ...summaries[symbol as keyof typeof summaries] } : null,
       prepareTrading,
+      existingPositionSymbols: vi.fn(async () => new Set<string>()),
       placeOrder,
       now: () => 1_750_000_000_000,
     };
@@ -142,19 +168,46 @@ describe("Binance Top volume analysis", () => {
     const completed = await waitForCompletion();
     expect(placeOrder).toHaveBeenCalledTimes(2);
     expect(placeOrder.mock.calls.map(([input]) => input)).toEqual(expect.arrayContaining([expect.objectContaining({
-      symbol: "BTCUSDT", direction: "LONG", initialMargin: 20, leverage: 10,
+      symbol: "BTCUSDT", direction: "LONG", initialMargin: 20, leverage: 20,
       stopLossPrice: 90, takeProfitPrice: 120, requireFlat: true, confirmed: true,
-      clientOrderId: expect.stringMatching(/^k-/),
+      clientOrderId: expect.stringMatching(/^k-v-/), source: "volume_top20",
     }), expect.objectContaining({
-      symbol: "SOLUSDT", direction: "SHORT", initialMargin: 20, leverage: 10,
+      symbol: "SOLUSDT", direction: "SHORT", initialMargin: 20, leverage: 20,
       stopLossPrice: 110, takeProfitPrice: 80, requireFlat: true, confirmed: true,
-      clientOrderId: expect.stringMatching(/^k-/),
+      clientOrderId: expect.stringMatching(/^k-v-/), source: "volume_top20",
     })]));
     expect(completed.items.map((item) => item.tradeStatus)).toEqual(["submitted", "skipped", "submitted"]);
     expect(completed.items.map((item) => item.tradeOrderId)).toEqual([101, undefined, 102]);
   });
 
-  it("marks an existing position or order as skipped instead of a trade failure", async () => {
+  it("skips AI analysis and trading when the symbol already has a position", async () => {
+    const run = vi.fn();
+    const placeOrder = vi.fn();
+    const deps: BinanceBatchDeps = {
+      leaders: vi.fn().mockResolvedValue([leaders[0], leaders[1]]),
+      analystModel: () => model,
+      run: run as unknown as BinanceBatchDeps["run"],
+      latestSummary: async () => null,
+      prepareTrading: vi.fn(async () => {}),
+      existingPositionSymbols: vi.fn(async () => new Set(["BTCUSDT"])),
+      placeOrder: placeOrder as unknown as BinanceBatchDeps["placeOrder"],
+      now: () => 1_750_000_000_000,
+    };
+
+    await startBinanceTopAnalysis({ autoTrade: true, confirmed: true }, deps);
+    const completed = await waitForCompletion();
+    expect(completed.items[0]).toMatchObject({
+      symbol: "BTCUSDT",
+      status: "skipped",
+      tradeStatus: "skipped",
+      skipReason: expect.stringContaining("跳过 AI 分析"),
+    });
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(run.mock.calls[0]?.[0]).toMatchObject({ symbol: "ETHUSDT" });
+    expect(placeOrder).not.toHaveBeenCalled();
+  });
+
+  it("marks an existing order found after analysis as skipped instead of a trade failure", async () => {
     const latest = new Map<string, string>();
     const deps: BinanceBatchDeps = {
       leaders: vi.fn().mockResolvedValue([leaders[0]]),
@@ -167,6 +220,7 @@ describe("Binance Top volume analysis", () => {
         ? { id: latest.get(symbol)!, direction: "long", entryStatus: "waiting", stopLossPrice: 90, takeProfitPrice: 120 }
         : null,
       prepareTrading: vi.fn(async () => {}),
+      existingPositionSymbols: vi.fn(async () => new Set<string>()),
       placeOrder: vi.fn(async () => {
         throw new ClientError(
           "BTCUSDT 已有多仓，自动批次已跳过",
@@ -185,6 +239,37 @@ describe("Binance Top volume analysis", () => {
       tradeStatus: "skipped",
       tradeError: expect.stringContaining("已有多仓"),
     });
+  });
+
+  it("starts and stops an hourly automation with an optional end time", async () => {
+    const now = 1_750_000_000_000;
+    const deps: BinanceBatchDeps = {
+      leaders: vi.fn().mockResolvedValue([]),
+      analystModel: () => model,
+      run: vi.fn() as unknown as BinanceBatchDeps["run"],
+      latestSummary: async () => null,
+      ...noopTradingDeps,
+      now: () => now,
+    };
+
+    await startBinanceTopAnalysis({
+      autoTrade: true,
+      confirmed: true,
+      repeatHourly: true,
+      automationEndAt: new Date(now + 3 * 60 * 60 * 1000).toISOString(),
+    }, deps);
+    const completed = await waitForCompletion();
+    expect(completed.automation).toMatchObject({
+      active: true,
+      continuous: false,
+      runCount: 1,
+      ranking: "volume_top20",
+      nextRunAt: new Date(now + 60 * 60 * 1000).toISOString(),
+    });
+
+    const stopped = stopBinanceTopAnalysisAutomation();
+    expect(stopped?.automation).toMatchObject({ active: false, runCount: 1 });
+    expect(stopped?.automation?.nextRunAt).toBeUndefined();
   });
 
   it("requires one explicit confirmation before preparing batch trading", async () => {

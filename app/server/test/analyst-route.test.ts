@@ -2,7 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const models = vi.hoisted(() => ({ aiConfig: vi.fn() }));
 const analyst = vi.hoisted(() => ({ runAnalyst: vi.fn() }));
-const batch = vi.hoisted(() => ({ startBinanceTopAnalysis: vi.fn(), binanceTopAnalysisState: vi.fn() }));
+const batch = vi.hoisted(() => ({
+  startBinanceTopAnalysis: vi.fn(),
+  binanceTopAnalysisState: vi.fn(),
+  stopBinanceTopAnalysisAutomation: vi.fn(),
+}));
 
 vi.mock("../../packages/core/src/ai/models.js", () => models);
 vi.mock("../../packages/core/src/ai/analyst.js", () => analyst);
@@ -16,6 +20,7 @@ describe("POST /:sym/reassess", () => {
     analyst.runAnalyst.mockReset();
     batch.startBinanceTopAnalysis.mockReset();
     batch.binanceTopAnalysisState.mockReset();
+    batch.stopBinanceTopAnalysisAutomation.mockReset();
   });
 
   it("returns started:false when the analyst layer is disabled", async () => {
@@ -60,10 +65,10 @@ describe("Binance Top volume analysis routes", () => {
     const res = await tsukiRequest("/api/symbols/binance/top-volume-analysis", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ autoTrade: true, confirmed: true }),
+      body: JSON.stringify({ autoTrade: true, confirmed: true, ranking: "gainers_top10" }),
     });
     expect(res.status).toBe(200);
-    expect(batch.startBinanceTopAnalysis).toHaveBeenCalledWith({ autoTrade: true, confirmed: true });
+    expect(batch.startBinanceTopAnalysis).toHaveBeenCalledWith({ autoTrade: true, confirmed: true, ranking: "gainers_top10" });
   });
 
   it("returns the current batch status", async () => {
@@ -71,5 +76,15 @@ describe("Binance Top volume analysis routes", () => {
     const res = await tsukiRequest("/api/symbols/binance/top-volume-analysis/status");
     expect(res.status).toBe(200);
     expect((await res.json()).data.status).toBe("completed");
+  });
+
+  it("stops the hourly automation", async () => {
+    batch.stopBinanceTopAnalysisAutomation.mockReturnValue({
+      id: "batch-1", status: "completed", startedAt: "now", items: [], automation: { active: false },
+    });
+    const res = await tsukiRequest("/api/symbols/binance/top-volume-analysis/automation/stop", { method: "POST" });
+    expect(res.status).toBe(200);
+    expect((await res.json()).data.automation.active).toBe(false);
+    expect(batch.stopBinanceTopAnalysisAutomation).toHaveBeenCalledOnce();
   });
 });

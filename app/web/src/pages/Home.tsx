@@ -13,7 +13,6 @@ import { CROSS_SECTION_TYPES, CrossSectionCharts, MAX_VISIBLE_DATES } from "./ho
 import { PositionsCard } from "./home/PositionsCard";
 import { QuickBar } from "./home/QuickBar";
 import { RecapBoard } from "./home/RecapBoard";
-import { WatchBoard } from "./home/WatchBoard";
 import { BinanceTopAnalysis } from "./home/BinanceTopAnalysis";
 import { BinancePositionsCard } from "./home/BinancePositionsCard";
 
@@ -63,7 +62,7 @@ export function Home() {
     <div className="page home-page">
       <h1>盘面 {isToday && session && <Badge className="session-tag">{SESSION_LABEL[session] ?? session}</Badge>}</h1>
       <div className="sub">
-        {isToday ? `${board?.date ?? ""} · 盘中看盘、盘后复盘，随时段自动切换` : `${date} · 历史复盘`}
+        {isToday ? `${board?.date ?? ""} · 实时行情与持仓` : `${date} · 历史复盘`}
       </div>
       {notice && NOTICE_LABEL[notice] && <ErrorBox>{NOTICE_LABEL[notice]}</ErrorBox>}
       <QuoteBar />
@@ -83,11 +82,11 @@ export function Home() {
       {(!isToday || board) && (
         <div className="home-grid">
           <div className="home-main">
-            {trading ? (
+            {isToday ? (
               <>
-                <SectionTitle>看盘</SectionTitle>
-                <WatchBoard board={board!} error={boardError} compact={false} />
-                <CrossSectionCharts date={date} />
+                <SectionTitle>Binance 持仓</SectionTitle>
+                <BinancePositionsCard />
+                {trading ? <CrossSectionCharts date={date} /> : <RecapBoard date={date} defaultExpanded />}
               </>
             ) : (
               <RecapBoard date={date} defaultExpanded />
@@ -98,18 +97,12 @@ export function Home() {
               <>
                 <SectionTitle>长桥持仓</SectionTitle>
                 <PositionsCard portfolio={portfolio} error={portfolioError} watching={watching} />
-                <SectionTitle>Binance 持仓</SectionTitle>
-                <BinancePositionsCard />
                 <RecapBoard date={date} defaultExpanded={false} />
               </>
             ) : isToday ? (
               <>
-                <SectionTitle>看盘（定格）</SectionTitle>
-                <WatchBoard board={board!} error={boardError} compact />
                 <SectionTitle>长桥持仓</SectionTitle>
                 <PositionsCard portfolio={portfolio} error={portfolioError} watching={watching} />
-                <SectionTitle>Binance 持仓</SectionTitle>
-                <BinancePositionsCard />
                 <CrossSectionCharts date={date} />
               </>
             ) : (

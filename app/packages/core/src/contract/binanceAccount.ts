@@ -1,4 +1,7 @@
 import { defineRoutes } from "./defineRoutes.js";
+import type { BinanceBatchRanking } from "./symbols.js";
+
+export type BinanceTradeSource = BinanceBatchRanking | "manual" | "mixed" | "unknown";
 
 export interface BinanceAccountConnectInput {
   apiKey: string;
@@ -40,9 +43,11 @@ export interface BinancePositionRow {
   netUnrealizedPnlIncludesCosts: boolean;
   leverage: number;
   liquidationPrice: number;
+  source: BinanceTradeSource;
 }
 
-export interface BinanceClosedPositionSummary {
+export interface BinanceClosedPositionTrade {
+  id: string;
   symbol: string;
   asset: string;
   realizedPnl: number;
@@ -50,14 +55,18 @@ export interface BinanceClosedPositionSummary {
   fundingFee: number;
   otherAdjustments: number;
   netPnl: number;
-  lastClosedAt: number;
-  realizedEventCount: number;
+  closedAt: number;
+  closeCount: number;
+  direction: "long" | "short" | "mixed" | "unknown";
+  source: BinanceTradeSource;
+  tradeId: string | null;
+  transactionId: number | null;
 }
 
 export interface BinanceClosedPositionHistory {
   from: number;
   to: number;
-  rows: BinanceClosedPositionSummary[];
+  rows: BinanceClosedPositionTrade[];
 }
 
 export interface BinanceOpenOrderRow {
@@ -84,6 +93,8 @@ export interface BinancePlaceTestnetOrderInput {
   requireFlat?: boolean;
   // 自动批次使用稳定编号，避免同一批次重试时产生无法辨认的重复订单。
   clientOrderId?: string;
+  // 保存自动榜单或人工下单来源，供当前持仓和历史平仓展示。
+  source?: Exclude<BinanceTradeSource, "mixed" | "unknown">;
   // 页面必须在用户看过订单摘要并确认后才传 true；服务端仍会再次校验测试网。
   confirmed: boolean;
 }

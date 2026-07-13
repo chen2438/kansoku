@@ -29,11 +29,15 @@ export interface NoteResult {
 
 export type ReassessResult = { started: boolean; reason?: string };
 
-export type BinanceBatchItemStatus = "queued" | "running" | "completed" | "failed";
+export type BinanceBatchItemStatus = "queued" | "running" | "completed" | "skipped" | "failed";
 export type BinanceBatchTradeStatus = "pending" | "submitted" | "skipped" | "failed";
+export type BinanceBatchRanking = "volume_top20" | "gainers_top10" | "losers_top10";
 export interface BinanceBatchStartInput {
   autoTrade?: boolean;
   confirmed?: boolean;
+  ranking?: BinanceBatchRanking;
+  repeatHourly?: boolean;
+  automationEndAt?: string | null;
 }
 export interface BinanceBatchItem {
   symbol: string;
@@ -48,15 +52,30 @@ export interface BinanceBatchItem {
   tradeStatus?: BinanceBatchTradeStatus;
   tradeOrderId?: number;
   tradeError?: string;
+  skipReason?: string;
   error?: string;
+}
+export interface BinanceBatchAutomationState {
+  active: boolean;
+  continuous: boolean;
+  startedAt: string;
+  endAt?: string;
+  lastRunAt?: string;
+  nextRunAt?: string;
+  stoppedAt?: string;
+  runCount: number;
+  ranking: BinanceBatchRanking;
+  lastError?: string;
 }
 export interface BinanceBatchState {
   id: string;
   mode: "analysis" | "analysis_and_trade";
+  ranking: BinanceBatchRanking;
   status: "running" | "completed";
   startedAt: string;
   finishedAt?: string;
   items: BinanceBatchItem[];
+  automation?: BinanceBatchAutomationState;
 }
 
 export type DeepDiveStartResult = { started: true } | { started: false; reason: "busy" | "disabled" };
@@ -85,6 +104,7 @@ export interface SymbolsApi {
   reassess(input: { sym: string }): Promise<ReassessResult>;
   binanceTopAnalysisStart(input?: BinanceBatchStartInput): Promise<BinanceBatchState>;
   binanceTopAnalysisStatus(input?: Record<string, never>): Promise<BinanceBatchState | null>;
+  binanceTopAnalysisAutomationStop(input?: Record<string, never>): Promise<BinanceBatchState | null>;
   note(input: { sym: string }): Promise<NoteResult>;
   deepDive(input: { sym: string }): Promise<DeepDiveStartResult>;
   deepDiveStatus(input: { sym: string }): Promise<DeepDiveState>;
@@ -106,6 +126,7 @@ export const symbolsRoutes = defineRoutes<SymbolsApi>("symbols", {
   reassess: { method: "POST", path: "/:sym/reassess" },
   binanceTopAnalysisStart: { method: "POST", path: "/binance/top-volume-analysis" },
   binanceTopAnalysisStatus: { method: "GET", path: "/binance/top-volume-analysis/status" },
+  binanceTopAnalysisAutomationStop: { method: "POST", path: "/binance/top-volume-analysis/automation/stop" },
   note: { method: "GET", path: "/:sym/note", raw: "body" },
   deepDive: { method: "POST", path: "/:sym/deep-dive", raw: "body" },
   deepDiveStatus: { method: "GET", path: "/:sym/deep-dive/status", raw: "body" },

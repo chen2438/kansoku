@@ -16,24 +16,6 @@ function QuoteCellBone() {
   );
 }
 
-function SymbolCardBone() {
-  return (
-    <div className="card app-skeleton-symbol-card" aria-hidden="true">
-      <div className="app-skeleton-symbol-head">
-        <Bone className="app-skeleton-bone--sym" />
-        <Bone className="app-skeleton-bone--badge" />
-        <Bone className="app-skeleton-bone--quote" />
-      </div>
-      <div className="app-skeleton-symbol-levels">
-        <Bone className="app-skeleton-bone--level" />
-        <Bone className="app-skeleton-bone--level" />
-        <Bone className="app-skeleton-bone--level" />
-      </div>
-      <Bone className="app-skeleton-bone--comment" />
-    </div>
-  );
-}
-
 export function AppSkeleton() {
   const desktop = isElectronShell();
 
@@ -63,7 +45,7 @@ export function AppSkeleton() {
 
       <div className="page home-page">
         <h1>盘面</h1>
-        <div className="sub">盘中看盘、盘后复盘，随时段自动切换</div>
+        <div className="sub">实时行情与持仓</div>
 
         <div className="quote-bar" aria-hidden="true">
           <QuoteCellBone />
@@ -85,12 +67,18 @@ export function AppSkeleton() {
 
         <div className="home-grid">
           <div className="home-main">
-            <div className="section-title">看盘</div>
-            <div className="overview-grid" aria-hidden="true">
-              <SymbolCardBone />
-              <SymbolCardBone />
-              <SymbolCardBone />
-              <SymbolCardBone />
+            <div className="section-title">Binance 持仓</div>
+            <div className="card positions-card app-skeleton-positions" aria-hidden="true">
+              <div className="app-skeleton-positions-summary">
+                <Bone className="app-skeleton-bone--stat" />
+                <Bone className="app-skeleton-bone--stat" />
+                <Bone className="app-skeleton-bone--stat" />
+              </div>
+              <div className="app-skeleton-positions-rows">
+                <Bone className="app-skeleton-bone--row" />
+                <Bone className="app-skeleton-bone--row" />
+                <Bone className="app-skeleton-bone--row" />
+              </div>
             </div>
             <div className="cross-section-charts" aria-hidden="true">
               <Bone className="app-skeleton-bone--chart-title" />
@@ -98,7 +86,7 @@ export function AppSkeleton() {
             </div>
           </div>
           <div className="home-side">
-            <div className="section-title">持仓</div>
+            <div className="section-title">长桥持仓</div>
             <div className="card positions-card app-skeleton-positions" aria-hidden="true">
               <div className="app-skeleton-positions-summary">
                 <Bone className="app-skeleton-bone--stat" />

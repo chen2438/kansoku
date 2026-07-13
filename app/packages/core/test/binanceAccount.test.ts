@@ -6,8 +6,8 @@ import {
   binanceCloseTestnetPosition,
   binancePlaceTestnetOrder,
   binancePositions,
+  listBinanceClosedPositionTrades,
   signQuery,
-  summarizeBinanceClosedPositions,
 } from "../src/services/marketdata/binanceAccount.js";
 
 describe("binance account signing", () => {
@@ -27,38 +27,62 @@ describe("binance account signing", () => {
 });
 
 describe("binance closed-position history", () => {
-  it("sums realized PnL with every position-related fee adjustment", () => {
-    const rows = summarizeBinanceClosedPositions([
-      { symbol: "BTCUSDT", asset: "USDT", incomeType: "REALIZED_PNL", income: "10", time: 100, tranId: 1 },
+  it("merges same-symbol closes within one minute, allocates fees, and sorts newest first", () => {
+    const rows = listBinanceClosedPositionTrades([
+      { symbol: "BTCUSDT", asset: "USDT", incomeType: "REALIZED_PNL", income: "10", time: 100, tranId: 1, tradeId: "btc-1" },
       { symbol: "BTCUSDT", asset: "USDT", incomeType: "COMMISSION", income: "-0.5", time: 50, tranId: 2 },
-      { symbol: "BTCUSDT", asset: "USDT", incomeType: "COMMISSION", income: "-0.4", time: 100, tranId: 3 },
+      { symbol: "BTCUSDT", asset: "USDT", incomeType: "COMMISSION", income: "-0.4", time: 100, tranId: 3, tradeId: "btc-1" },
       { symbol: "BTCUSDT", asset: "USDT", incomeType: "FUNDING_FEE", income: "-0.1", time: 80, tranId: 4 },
-      { symbol: "BTCUSDT", asset: "USDT", incomeType: "COMMISSION_REBATE", income: "0.05", time: 110, tranId: 5 },
+      { symbol: "BTCUSDT", asset: "USDT", incomeType: "COMMISSION_REBATE", income: "0.05", time: 110, tranId: 5, tradeId: "btc-1" },
       { symbol: "BTCUSDT", asset: "USDT", incomeType: "INSURANCE_CLEAR", income: "-0.25", time: 100, tranId: 6 },
       { symbol: "BTCUSDT", asset: "USDT", incomeType: "TRANSFER", income: "1000", time: 120, tranId: 7 },
-      { symbol: "ETHUSDT", asset: "USDT", incomeType: "REALIZED_PNL", income: "-2", time: 200, tranId: 8 },
-      { symbol: "ETHUSDT", asset: "USDT", incomeType: "COMMISSION", income: "-0.2", time: 200, tranId: 9 },
+      { symbol: "BTCUSDT", asset: "USDT", incomeType: "REALIZED_PNL", income: "3", time: 150, tranId: 8, tradeId: "btc-2" },
+      { symbol: "BTCUSDT", asset: "USDT", incomeType: "COMMISSION", income: "-0.2", time: 150, tranId: 9, tradeId: "btc-2" },
+      { symbol: "ETHUSDT", asset: "USDT", incomeType: "REALIZED_PNL", income: "-2", time: 200, tranId: 10, tradeId: "eth-1" },
+      { symbol: "ETHUSDT", asset: "USDT", incomeType: "COMMISSION", income: "-0.2", time: 200, tranId: 11, tradeId: "eth-1" },
       { symbol: "XRPUSDT", asset: "USDT", incomeType: "COMMISSION", income: "-0.1", time: 300, tranId: 10 },
-    ]);
+    ], new Map([
+      ["BTCUSDT:btc-1", "long" as const],
+      ["BTCUSDT:btc-2", "short" as const],
+      ["ETHUSDT:eth-1", "short" as const],
+    ]));
 
     expect(rows).toEqual([
       expect.objectContaining({
         symbol: "ETHUSDT", realizedPnl: -2, commission: -0.2, fundingFee: 0,
-        otherAdjustments: 0, netPnl: -2.2, lastClosedAt: 200, realizedEventCount: 1,
+        otherAdjustments: 0, netPnl: -2.2, closedAt: 200, closeCount: 1, direction: "short", tradeId: "eth-1",
       }),
       expect.objectContaining({
-        symbol: "BTCUSDT", realizedPnl: 10, commission: -0.9, fundingFee: -0.1,
-        otherAdjustments: -0.2, netPnl: 8.8, lastClosedAt: 100, realizedEventCount: 1,
+        symbol: "BTCUSDT", realizedPnl: 13, commission: -1.1, fundingFee: -0.1,
+        otherAdjustments: -0.2, netPnl: 11.6, closedAt: 150, closeCount: 2, direction: "mixed", tradeId: null,
       }),
     ]);
   });
 
+  it("keeps same-symbol closes separate when adjacent closes are over one minute apart", () => {
+    const rows = listBinanceClosedPositionTrades([
+      { symbol: "BTCUSDT", asset: "USDT", incomeType: "REALIZED_PNL", income: "1", time: 100_000, tranId: 1 },
+      { symbol: "BTCUSDT", asset: "USDT", incomeType: "REALIZED_PNL", income: "2", time: 160_000, tranId: 2 },
+      { symbol: "BTCUSDT", asset: "USDT", incomeType: "REALIZED_PNL", income: "3", time: 220_001, tranId: 3 },
+    ]);
+
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ realizedPnl: 3, closedAt: 220_001, closeCount: 1 });
+    expect(rows[1]).toMatchObject({ realizedPnl: 3, closedAt: 160_000, closeCount: 2 });
+  });
+
   it("requests the full 90-day income window with Binance pagination", async () => {
     const now = Date.UTC(2026, 6, 13);
-    const fetchMock = vi.fn(async (_input: RequestInfo | URL) => Response.json([
-      { symbol: "BTCUSDT", asset: "USDT", incomeType: "REALIZED_PNL", income: "1.2", time: now - 1_000, tranId: 1 },
-      { symbol: "BTCUSDT", asset: "USDT", incomeType: "COMMISSION", income: "-0.2", time: now - 1_000, tranId: 2 },
-    ]));
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/fapi/v1/userTrades") {
+        return Response.json([{ symbol: "BTCUSDT", id: 123, side: "SELL", positionSide: "BOTH" }]);
+      }
+      return Response.json([
+        { symbol: "BTCUSDT", asset: "USDT", incomeType: "REALIZED_PNL", income: "1.2", time: now - 1_000, tranId: 1, tradeId: "123" },
+        { symbol: "BTCUSDT", asset: "USDT", incomeType: "COMMISSION", income: "-0.2", time: now - 1_000, tranId: 2, tradeId: "123" },
+      ]);
+    });
 
     const result = await binanceClosedPositionHistory(
       { apiKey: "test-key", apiSecret: "test-secret", testnet: true },
@@ -67,13 +91,18 @@ describe("binance closed-position history", () => {
     );
 
     expect(result).toMatchObject({ from: now - 90 * 24 * 60 * 60 * 1000, to: now });
-    expect(result.rows[0]).toMatchObject({ symbol: "BTCUSDT", realizedPnl: 1.2, commission: -0.2, netPnl: 1 });
+    expect(result.rows[0]).toMatchObject({
+      symbol: "BTCUSDT", realizedPnl: 1.2, commission: -0.2, netPnl: 1, closedAt: now - 1_000, direction: "long",
+    });
     const url = new URL(String(fetchMock.mock.calls[0]?.[0]));
     expect(url.pathname).toBe("/fapi/v1/income");
     expect(url.searchParams.get("startTime")).toBe(String(result.from));
     expect(url.searchParams.get("endTime")).toBe(String(now));
     expect(url.searchParams.get("page")).toBe("1");
     expect(url.searchParams.get("limit")).toBe("1000");
+    const tradeUrl = new URL(String(fetchMock.mock.calls.find(([input]) => new URL(String(input)).pathname === "/fapi/v1/userTrades")?.[0]));
+    expect(tradeUrl.searchParams.get("symbol")).toBe("BTCUSDT");
+    expect(tradeUrl.searchParams.get("fromId")).toBe("123");
   });
 });
 

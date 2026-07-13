@@ -1,4 +1,5 @@
 import type { NewsItem, RawBar } from "../../../../../shared/types.js";
+import type { BinanceBatchRanking } from "../../contract/symbols.js";
 import { ClientError } from "../../errors.js";
 import { getLiquidationSnapshot } from "./binanceLiquidations.js";
 import type { BinanceDerivativesSnapshot, BinanceInstrument, MarketDataProvider, RatioSnapshot, RawQuote } from "./types.js";
@@ -41,10 +42,28 @@ export interface BinanceVolumeLeader {
   quoteVolume: number;
 }
 
-export async function getBinanceTopUsdtPerpetuals(limit = 20): Promise<BinanceVolumeLeader[]> {
+export function rankBinancePerpetuals(
+  rows: BinanceVolumeLeader[],
+  ranking: BinanceBatchRanking,
+  limit: number,
+): BinanceVolumeLeader[] {
+  return [...rows]
+    .filter((ticker) => Number.isFinite(ticker.quoteVolume) && Number.isFinite(ticker.changePercent))
+    .sort((a, b) => ranking === "gainers_top10"
+      ? b.changePercent - a.changePercent || b.quoteVolume - a.quoteVolume
+      : ranking === "losers_top10"
+        ? a.changePercent - b.changePercent || b.quoteVolume - a.quoteVolume
+        : b.quoteVolume - a.quoteVolume)
+    .slice(0, Math.max(1, Math.min(100, Math.floor(limit))));
+}
+
+async function getBinanceRankedUsdtPerpetuals(
+  ranking: BinanceBatchRanking,
+  limit: number,
+): Promise<BinanceVolumeLeader[]> {
   const instruments = await getBinanceInstruments();
   const tickers = await request<Array<{ symbol: string; lastPrice: string; priceChangePercent: string; quoteVolume: string }>>("/fapi/v1/ticker/24hr");
-  return tickers
+  const eligible = tickers
     .filter((ticker) => {
       const instrument = instruments.get(ticker.symbol);
       return instrument?.status === "TRADING" && instrument.quoteAsset === "USDT" &&
@@ -55,10 +74,20 @@ export async function getBinanceTopUsdtPerpetuals(limit = 20): Promise<BinanceVo
       lastPrice: n(ticker.lastPrice),
       changePercent: n(ticker.priceChangePercent),
       quoteVolume: n(ticker.quoteVolume),
-    }))
-    .filter((ticker) => Number.isFinite(ticker.quoteVolume))
-    .sort((a, b) => b.quoteVolume - a.quoteVolume)
-    .slice(0, Math.max(1, Math.min(100, Math.floor(limit))));
+    }));
+  return rankBinancePerpetuals(eligible, ranking, limit);
+}
+
+export async function getBinanceTopUsdtPerpetuals(limit = 20): Promise<BinanceVolumeLeader[]> {
+  return getBinanceRankedUsdtPerpetuals("volume_top20", limit);
+}
+
+export async function getBinanceTopGainers(limit = 10): Promise<BinanceVolumeLeader[]> {
+  return getBinanceRankedUsdtPerpetuals("gainers_top10", limit);
+}
+
+export async function getBinanceTopLosers(limit = 10): Promise<BinanceVolumeLeader[]> {
+  return getBinanceRankedUsdtPerpetuals("losers_top10", limit);
 }
 
 const n = (value: unknown) => Number(value);

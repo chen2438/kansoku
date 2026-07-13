@@ -686,12 +686,21 @@ a.zone-item:hover { text-decoration: none; background: var(--bg-hover); }
 .binance-batch-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 7px; }
 .binance-batch-head .btn { display: inline-flex; align-items: center; gap: 7px; }
 .binance-batch-trade-btn { border-color: var(--down) !important; color: var(--down) !important; }
+.binance-batch-gainers-btn { border-color: var(--up) !important; color: var(--up) !important; }
+.binance-batch-losers-btn { border-color: var(--down) !important; color: var(--down) !important; }
+.binance-batch-automation-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.binance-batch-automation-controls label { display: inline-flex; align-items: center; gap: 5px; color: var(--text-muted); font-size: var(--fs-sm); }
+.binance-batch-automation-controls input[type="checkbox"] { margin: 0; accent-color: var(--accent); }
+.binance-batch-automation-controls input[type="datetime-local"] { min-height: 28px; border: 1px solid var(--border); background: var(--bg-element); color: var(--text-primary); padding: 3px 6px; font: inherit; }
+.binance-batch-automation-controls select { min-height: 28px; border: 1px solid var(--border); background: var(--bg-element); color: var(--text-primary); padding: 3px 6px; font: inherit; }
 .binance-batch-summary { color: var(--text-muted); font-size: var(--fs-sm); }
+.binance-batch-automation-summary { color: var(--accent); }
 .binance-batch-items { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 5px 12px; margin-top: 9px; }
 .binance-batch-item { display: flex; justify-content: space-between; gap: 8px; min-width: 0; color: var(--text-muted); font-size: var(--fs-sm); line-height: 24px; border-bottom: 1px solid var(--border); }
 .binance-batch-item span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-primary); }
 .binance-batch-item.is-running span:last-child { color: var(--accent); }
 .binance-batch-item.is-completed span:last-child { color: var(--up); }
+.binance-batch-item.is-skipped span:last-child { color: var(--text-muted); }
 .binance-batch-item.is-failed span:last-child { color: var(--down); }
 .binance-batch-item.trade-failed span:last-child { color: var(--down); }
 .binance-batch-item.trade-pending span:last-child { color: var(--accent); }
@@ -735,7 +744,7 @@ a.zone-item:hover { text-decoration: none; background: var(--bg-hover); }
 .positions-row .pct { text-align: right; }
 .positions-row .up { color: var(--up); }
 .positions-row .down { color: var(--down); }
-.binance-positions-list { grid-template-columns: max-content minmax(0, 1fr) max-content max-content max-content; }
+.binance-positions-list { grid-template-columns: max-content minmax(0, 1fr) max-content max-content max-content max-content max-content max-content; }
 .binance-positions-list .detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .binance-positions-columns { display: contents; }
 .binance-positions-columns span,
@@ -755,7 +764,31 @@ a.zone-item:hover { text-decoration: none; background: var(--bg-hover); }
 .binance-action-message { color: var(--up); }
 .binance-action-error { color: var(--down); }
 .binance-history { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--border); }
-.binance-history-title { color: var(--text-primary); font-size: var(--fs-md); font-weight: 600; }
+.binance-history-title { display: flex; justify-content: space-between; gap: 12px; color: var(--text-primary); font-size: var(--fs-md); font-weight: 600; }
+.binance-history-title .up { color: var(--up); }
+.binance-history-title .down { color: var(--down); }
+.binance-history-groups { margin-top: 7px; }
+.binance-history-group-columns,
+.binance-history-group-row {
+  display: grid; grid-template-columns: max-content minmax(0, 1fr) max-content max-content max-content;
+  column-gap: 8px; align-items: baseline;
+}
+.binance-history-group-columns { padding: 0 0 5px; color: var(--text-muted); font-size: var(--fs-xs); font-weight: 500; }
+.binance-history-group-columns span:nth-child(n + 3) { text-align: right; }
+.binance-history-group { border-top: 1px solid var(--border); }
+.binance-history-group-row {
+  width: 100%; padding: 7px 0; border: 0; background: transparent; color: var(--text-secondary);
+  font: inherit; font-size: var(--fs-sm); font-variant-numeric: tabular-nums; text-align: left; cursor: pointer;
+}
+.binance-history-group-row:hover { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.binance-history-group-row .sym { color: var(--text-primary); font-weight: 600; }
+.binance-history-group-row .detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.binance-history-group-row .date,
+.binance-history-group-row .win-rate,
+.binance-history-group-row .net { text-align: right; white-space: nowrap; }
+.binance-history-group-row .up { color: var(--up); }
+.binance-history-group-row .down { color: var(--down); }
+.binance-history-group-details { padding: 0 8px 8px 16px; background: color-mix(in srgb, var(--bg-element) 70%, transparent); }
 .binance-history-list {
   display: grid; grid-template-columns: max-content minmax(0, 1fr) max-content max-content;
   column-gap: 8px; align-items: baseline; margin-top: 7px;
@@ -770,6 +803,12 @@ a.zone-item:hover { text-decoration: none; background: var(--bg-hover); }
 .binance-history-row .date { color: var(--text-secondary); }
 .binance-history-row .detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .binance-history-row .net { text-align: right; }
+.binance-history-direction { font-weight: 600; }
+.binance-history-direction.is-long { color: var(--up); }
+.binance-history-direction.is-short { color: var(--down); }
+.binance-history-direction.is-mixed,
+.binance-history-direction.is-unknown { color: var(--text-muted); }
+.binance-trade-source { color: var(--accent); white-space: nowrap; }
 .binance-history-error { padding-top: 8px; color: var(--down); font-size: var(--fs-sm); }
 .binance-history-note { margin-top: 7px; color: var(--text-muted); font-size: var(--fs-xs); line-height: 1.5; }
 

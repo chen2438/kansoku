@@ -13,6 +13,8 @@ pnpm install        # 首次（从 workspace root）
 pnpm start          # http://localhost:5199
 ```
 
+工作区在 `pnpm-workspace.yaml` 中固定关闭 pnpm 11 的全局虚拟依赖目录。pnpm 11 原本会在普通运行时开启、在 `CI=true` 时关闭，交替运行会反复把 `node_modules` 判为过期并自动重装；固定配置后，开发和测试共用同一种依赖布局。
+
 `pnpm start` 起 node 宿主单进程：kernel 绑在 5199 端口，同时托管 REST API、WS（`/api/ws`）和已构建好的前端静态资源（`web/dist`，没 build 过会提示先跑 `pnpm --filter @trade/web build`）。
 
 开发态是两个进程，`pnpm dev` 用 `concurrently` 并行拉起：web 起 Vite dev server（监听 5199，把 `/api`、`/legacy` 代理到 kernel）负责前端热更新；server 用 `vite-node --watch` 跑 kernel 本体（监听 `KERNEL_PORT`，默认 5200），改 server 代码自动重启，不需要单独的 build 步骤。

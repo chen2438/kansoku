@@ -8,7 +8,7 @@ import type {
   BinanceCloseAllTestnetPositionsResult,
   BinanceCloseTestnetPositionInput,
   BinanceClosedPositionHistory,
-  BinanceClosedPositionSummary,
+  BinanceClosedPositionTrade,
   BinanceOpenOrderRow,
   BinanceOpenedPositionResult,
   BinancePlacedOrder,
@@ -265,6 +265,7 @@ export async function binancePositions(
         netUnrealizedPnlIncludesCosts,
         leverage: num(p.leverage),
         liquidationPrice: num(p.liquidationPrice),
+        source: "unknown" as const,
       };
     })
     .filter((p) => p.positionAmt !== 0);
@@ -280,6 +281,15 @@ interface RawIncomeRow {
   tradeId?: string;
 }
 
+interface RawUserTrade {
+  symbol?: string;
+  id?: number | string;
+  side?: string;
+  positionSide?: string;
+}
+
+type ClosedPositionDirection = BinanceClosedPositionTrade["direction"];
+
 const CLOSED_POSITION_INCOME_TYPES = new Set([
   "REALIZED_PNL",
   "COMMISSION",
@@ -290,51 +300,160 @@ const CLOSED_POSITION_INCOME_TYPES = new Set([
   "FEE_RETURN",
   "POSITION_LIMIT_INCREASE_FEE",
 ]);
+const CLOSED_TRADE_MERGE_WINDOW_MS = 60_000;
+const CLOSED_TRADE_DIRECTION_CACHE_MAX = 10_000;
+const closedTradeDirectionCache = new Map<string, ClosedPositionDirection>();
+const normalizeIncome = (value: number) => Math.round(value * 100_000_000) / 100_000_000;
 
-export function summarizeBinanceClosedPositions(rawRows: RawIncomeRow[]): BinanceClosedPositionSummary[] {
+function mergedDirection(a: ClosedPositionDirection, b: ClosedPositionDirection): ClosedPositionDirection {
+  if (a === "unknown" || b === "unknown") return "unknown";
+  return a === b ? a : "mixed";
+}
+
+function closedDirectionFromUserTrade(trade: RawUserTrade): ClosedPositionDirection {
+  if (trade.positionSide === "LONG") return "long";
+  if (trade.positionSide === "SHORT") return "short";
+  if (trade.side === "SELL") return "long";
+  if (trade.side === "BUY") return "short";
+  return "unknown";
+}
+
+export function listBinanceClosedPositionTrades(
+  rawRows: RawIncomeRow[],
+  tradeDirections: ReadonlyMap<string, ClosedPositionDirection> = new Map(),
+): BinanceClosedPositionTrade[] {
   const rows = rawRows.filter((row) => row.symbol && row.asset && CLOSED_POSITION_INCOME_TYPES.has(row.incomeType ?? ""));
-  const closedKeys = new Set(
-    rows
-      .filter((row) => row.incomeType === "REALIZED_PNL")
-      .map((row) => `${row.symbol}:${row.asset}`),
-  );
-  const summaries = new Map<string, BinanceClosedPositionSummary>();
-
-  for (const row of rows) {
-    const key = `${row.symbol}:${row.asset}`;
-    if (!closedKeys.has(key)) continue;
-    const summary = summaries.get(key) ?? {
+  const trades = rows
+    .filter((row) => row.incomeType === "REALIZED_PNL")
+    .map((row, index): BinanceClosedPositionTrade => ({
+      id: `${row.symbol}:${row.asset}:${row.tradeId || row.tranId || `${num(row.time)}:${index}`}`,
       symbol: row.symbol!,
       asset: row.asset!,
-      realizedPnl: 0,
+      realizedPnl: num(row.income),
       commission: 0,
       fundingFee: 0,
       otherAdjustments: 0,
       netPnl: 0,
-      lastClosedAt: 0,
-      realizedEventCount: 0,
-    };
-    const income = num(row.income);
-    if (row.incomeType === "REALIZED_PNL") {
-      summary.realizedPnl += income;
-      summary.realizedEventCount += 1;
-      summary.lastClosedAt = Math.max(summary.lastClosedAt, num(row.time));
-    } else if (row.incomeType === "COMMISSION") {
-      summary.commission += income;
-    } else if (row.incomeType === "FUNDING_FEE") {
-      summary.fundingFee += income;
-    } else {
-      summary.otherAdjustments += income;
-    }
-    summaries.set(key, summary);
+      closedAt: num(row.time),
+      closeCount: 1,
+      direction: row.tradeId ? tradeDirections.get(`${row.symbol}:${row.tradeId}`) ?? "unknown" : "unknown",
+      source: "unknown",
+      tradeId: row.tradeId ? String(row.tradeId) : null,
+      transactionId: row.tranId ?? null,
+    }));
+
+  const bySymbol = new Map<string, BinanceClosedPositionTrade[]>();
+  for (const trade of trades) {
+    const key = `${trade.symbol}:${trade.asset}`;
+    const symbolTrades = bySymbol.get(key) ?? [];
+    symbolTrades.push(trade);
+    bySymbol.set(key, symbolTrades);
+  }
+  for (const symbolTrades of bySymbol.values()) {
+    symbolTrades.sort((a, b) => a.closedAt - b.closedAt || (a.transactionId ?? 0) - (b.transactionId ?? 0));
   }
 
-  return [...summaries.values()]
-    .map((summary) => ({
-      ...summary,
-      netPnl: summary.realizedPnl + summary.commission + summary.fundingFee + summary.otherAdjustments,
-    }))
-    .sort((a, b) => b.lastClosedAt - a.lastClosedAt || a.symbol.localeCompare(b.symbol));
+  for (const row of rows) {
+    if (row.incomeType === "REALIZED_PNL") continue;
+    const symbolTrades = bySymbol.get(`${row.symbol}:${row.asset}`);
+    if (!symbolTrades?.length) continue;
+    const rowTime = num(row.time);
+    const rowTradeId = row.tradeId ? String(row.tradeId) : null;
+    const target = (rowTradeId
+      ? symbolTrades.find((trade) => trade.tradeId === rowTradeId)
+      : undefined)
+      ?? symbolTrades.find((trade) => trade.closedAt >= rowTime);
+    if (!target) continue;
+    const income = num(row.income);
+    if (row.incomeType === "COMMISSION") target.commission += income;
+    else if (row.incomeType === "FUNDING_FEE") target.fundingFee += income;
+    else target.otherAdjustments += income;
+  }
+
+  const mergedTrades: BinanceClosedPositionTrade[] = [];
+  for (const symbolTrades of bySymbol.values()) {
+    let last: BinanceClosedPositionTrade | undefined;
+    for (const source of symbolTrades) {
+      const trade = {
+        ...source,
+        netPnl: normalizeIncome(source.realizedPnl + source.commission + source.fundingFee + source.otherAdjustments),
+      };
+      if (last && trade.closedAt - last.closedAt <= CLOSED_TRADE_MERGE_WINDOW_MS) {
+        last.id = `${last.id}|${trade.id}`;
+        last.realizedPnl = normalizeIncome(last.realizedPnl + trade.realizedPnl);
+        last.commission = normalizeIncome(last.commission + trade.commission);
+        last.fundingFee = normalizeIncome(last.fundingFee + trade.fundingFee);
+        last.otherAdjustments = normalizeIncome(last.otherAdjustments + trade.otherAdjustments);
+        last.netPnl = normalizeIncome(last.realizedPnl + last.commission + last.fundingFee + last.otherAdjustments);
+        last.closedAt = trade.closedAt;
+        last.closeCount += trade.closeCount;
+        last.direction = mergedDirection(last.direction, trade.direction);
+        last.tradeId = null;
+        last.transactionId = trade.transactionId;
+      } else {
+        last = trade;
+        mergedTrades.push(last);
+      }
+    }
+  }
+
+  return mergedTrades
+    .sort((a, b) => b.closedAt - a.closedAt
+      || (b.transactionId ?? 0) - (a.transactionId ?? 0)
+      || a.symbol.localeCompare(b.symbol));
+}
+
+async function closedTradeDirections(
+  creds: BinanceAccountCreds,
+  rawRows: RawIncomeRow[],
+  fetchImpl: typeof fetch,
+): Promise<Map<string, ClosedPositionDirection>> {
+  const wantedBySymbol = new Map<string, Set<string>>();
+  for (const row of rawRows) {
+    const tradeId = row.incomeType === "REALIZED_PNL" && row.tradeId ? String(row.tradeId) : null;
+    if (!row.symbol || !tradeId || !/^\d+$/.test(tradeId)) continue;
+    const wanted = wantedBySymbol.get(row.symbol) ?? new Set<string>();
+    wanted.add(tradeId);
+    wantedBySymbol.set(row.symbol, wanted);
+  }
+
+  const directions = new Map<string, ClosedPositionDirection>();
+  for (const [symbol, wanted] of wantedBySymbol) {
+    for (const id of wanted) {
+      const key = `${symbol}:${id}`;
+      const cached = closedTradeDirectionCache.get(key);
+      if (cached) directions.set(key, cached);
+    }
+    const missing = [...wanted].filter((id) => !directions.has(`${symbol}:${id}`));
+    if (missing.length === 0) continue;
+    let fromId = missing.reduce((lowest, id) => BigInt(id) < BigInt(lowest) ? id : lowest);
+    try {
+      for (let page = 0; page < 20; page += 1) {
+        const params = new URLSearchParams({ symbol, fromId, limit: "1000" });
+        const trades = await signedGet<RawUserTrade[]>(creds, "/fapi/v1/userTrades", params, fetchImpl);
+        for (const trade of trades ?? []) {
+          const id = trade.id == null ? null : String(trade.id);
+          if (!id || !wanted.has(id)) continue;
+          const key = `${symbol}:${id}`;
+          const direction = closedDirectionFromUserTrade(trade);
+          directions.set(key, direction);
+          closedTradeDirectionCache.set(key, direction);
+        }
+        if (!trades || trades.length < 1000 || [...wanted].every((id) => directions.has(`${symbol}:${id}`))) break;
+        const lastId = trades.at(-1)?.id;
+        if (lastId == null || !/^\d+$/.test(String(lastId))) break;
+        fromId = String(BigInt(String(lastId)) + 1n);
+      }
+    } catch {
+      // 方向属于补充信息；成交查询失败时保留盈亏历史，并在页面显示“方向未知”。
+    }
+  }
+  while (closedTradeDirectionCache.size > CLOSED_TRADE_DIRECTION_CACHE_MAX) {
+    const oldest = closedTradeDirectionCache.keys().next().value;
+    if (oldest === undefined) break;
+    closedTradeDirectionCache.delete(oldest);
+  }
+  return directions;
 }
 
 export async function binanceClosedPositionHistory(
@@ -355,7 +474,7 @@ export async function binanceClosedPositionHistory(
     });
     const pageRows = await signedGet<RawIncomeRow[]>(creds, "/fapi/v1/income", params, fetchImpl);
     for (const row of pageRows ?? []) {
-      const key = `${row.incomeType ?? ""}:${row.tranId ?? ""}:${row.tradeId ?? ""}:${row.asset ?? ""}`;
+      const key = [row.incomeType, row.tranId, row.tradeId, row.symbol, row.asset, row.time, row.income].join(":");
       if (seen.has(key)) continue;
       seen.add(key);
       rawRows.push(row);
@@ -363,7 +482,8 @@ export async function binanceClosedPositionHistory(
     if (!pageRows || pageRows.length < 1000) break;
   }
 
-  return { from, to: now, rows: summarizeBinanceClosedPositions(rawRows) };
+  const tradeDirections = await closedTradeDirections(creds, rawRows, fetchImpl);
+  return { from, to: now, rows: listBinanceClosedPositionTrades(rawRows, tradeDirections) };
 }
 
 interface RawOpenOrder {
