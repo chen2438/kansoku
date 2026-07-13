@@ -1,4 +1,4 @@
-import { inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import type { AnalysisOutcome, OutcomeStatus } from "../../../../../shared/types.js";
 import { getDb, type Db } from "../../db/index.js";
 import { outcomes } from "../../db/schema.js";
@@ -19,6 +19,7 @@ export async function getResolvedOutcomes(chartIds: string[], db: Db = getDb()):
         status: row.status as OutcomeStatus,
         pct_since_anchor: row.pctSinceAnchor,
         resolved_at: row.resolvedAt,
+        entered: row.entered == null ? null : row.entered !== 0,
       } satisfies AnalysisOutcome,
     ]),
   );
@@ -36,6 +37,16 @@ export async function saveResolvedOutcome(key: OutcomeKey, outcome: AnalysisOutc
       pctSinceAnchor: outcome.pct_since_anchor,
       resolvedAt: outcome.resolved_at,
       judgedAt: new Date().toISOString(),
+      entered: outcome.entered == null ? null : outcome.entered ? 1 : 0,
     })
     .onConflictDoNothing();
+}
+
+// 回填触发状态：老数据入库时没有 entered 列，事后用同样的 K 线重算并补上。
+// status/resolved_at 不动（已冻结），只填 entered。
+export async function backfillOutcomeEntered(chartId: string, entered: boolean | null, db: Db = getDb()): Promise<void> {
+  await db
+    .update(outcomes)
+    .set({ entered: entered == null ? null : entered ? 1 : 0 })
+    .where(eq(outcomes.chartId, chartId));
 }

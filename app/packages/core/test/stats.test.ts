@@ -63,4 +63,26 @@ describe("aggregateStats", () => {
     expect(stats.total).toBe(0);
     expect(stats.overall.win_rate).toBeNull();
   });
+
+  it("splits by trigger and direction, keeping phantom (untriggered) results separate", () => {
+    const enteredHit = (v: boolean): AnalysisOutcome => ({ ...outcome("hit_target", 3), entered: v });
+    const enteredStop = (v: boolean): AnalysisOutcome => ({ ...outcome("hit_stop", -1), entered: v });
+    const stats = aggregateStats([
+      row({ direction: "long", outcome: enteredHit(true) }), // 已触发·做多 命中
+      row({ direction: "long", outcome: enteredStop(true) }), // 已触发·做多 止损
+      row({ direction: "short", outcome: enteredHit(true) }), // 已触发·做空 命中
+      row({ direction: "short", outcome: enteredHit(false) }), // 未触发·做空（纸面命中）
+      row({ direction: "neutral", outcome: outcome("held_range") }), // 观望不计入触发拆分
+      row({ direction: "long", outcome: outcome("hit_target") }), // entered=undefined 老数据，跳过
+    ]);
+    expect(stats.by_trigger.entered.long.total).toBe(2);
+    expect(stats.by_trigger.entered.long.win_rate).toBe(0.5); // 一胜一负
+    expect(stats.by_trigger.entered.short.total).toBe(1);
+    expect(stats.by_trigger.entered.short.win_rate).toBe(1);
+    expect(stats.by_trigger.not_entered.short.total).toBe(1);
+    expect(stats.by_trigger.not_entered.short.win_rate).toBe(1); // 纸面上也算命中
+    expect(stats.by_trigger.not_entered.long.total).toBe(0);
+    // 总体仍把所有预测算进去，不受触发拆分影响。
+    expect(stats.overall.total).toBe(6);
+  });
 });

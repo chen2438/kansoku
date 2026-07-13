@@ -54,12 +54,27 @@ const STATS_WINDOWS: { key: StatsWindowKey; label: string }[] = [
 function StatsBlock({ stats }: { stats: PredictionStats | null }) {
   if (!stats) return <div className="note-block">统计加载中…</div>;
   if (stats.total === 0) return <div className="note-block">这个时间段还没有可统计的预测。</div>;
+  const tg = stats.by_trigger;
+  const enteredTotal = tg.entered.long.total + tg.entered.short.total;
+  const notEnteredTotal = tg.not_entered.long.total + tg.not_entered.short.total;
   return (
     <div className="overview-stats">
       <BucketLine label="全部预测" bucket={stats.overall} />
       <BucketLine label="做多" bucket={stats.by_direction.long} />
       <BucketLine label="做空" bucket={stats.by_direction.short} />
       <BucketLine label="观望" bucket={stats.by_direction.neutral} />
+      {enteredTotal > 0 && (
+        <>
+          {tg.entered.long.total > 0 && <BucketLine label="已触发·做多" bucket={tg.entered.long} />}
+          {tg.entered.short.total > 0 && <BucketLine label="已触发·做空" bucket={tg.entered.short} />}
+        </>
+      )}
+      {notEnteredTotal > 0 && (
+        <>
+          {tg.not_entered.long.total > 0 && <BucketLine label="未触发·做多（纸面）" bucket={tg.not_entered.long} />}
+          {tg.not_entered.short.total > 0 && <BucketLine label="未触发·做空（纸面）" bucket={tg.not_entered.short} />}
+        </>
+      )}
       <BucketLine label="AI 生成" bucket={stats.by_origin.analyst} />
       <BucketLine label="手动分析" bucket={stats.by_origin.manual} />
     </div>

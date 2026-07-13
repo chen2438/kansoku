@@ -165,7 +165,9 @@ async function buildSymbolReport(
   const prediction = (doc?.input.prediction as IntradayPrediction | null | undefined) ?? null;
   const plan = doc && doc.built.kind === "intraday" ? doc.built.entryPlan : null;
   const anchor = prediction?.anchor ? { time: prediction.anchor.time, price: prediction.anchor.price } : null;
-  const outcomePlan = plan ? { entry: plan.entry, stop: plan.stop, target1: plan.target1 } : null;
+  const outcomePlan = plan
+    ? { entry: plan.entry, stop: plan.stop, target1: plan.target1, entry_kind: plan.entry_kind ?? null, trigger: plan.trigger ?? null }
+    : null;
   let outcome = attachRMultiple(
     await deps.getOutcome(latest.id).catch(() => null),
     prediction?.direction ?? null,

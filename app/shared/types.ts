@@ -671,6 +671,10 @@ export interface AnalysisOutcome {
   pct_since_anchor: number;
   resolved_at: number | null;
   r_multiple?: number | null;
+  // 入场是否真的被触发（价格是否在结算前碰到入场/触发位）。
+  // true=已触发（真实成交，命中/止损是真实战绩）；false=未触发（价格没进场就自己走到了
+  // 目标/止损，属于"纸面结果"）；null/缺省=方向性预测但无法判定（老数据未回填）或观望。
+  entered?: boolean | null;
 }
 
 export interface SymbolAnalysisRow extends ChartMeta {
@@ -706,6 +710,11 @@ export interface PredictionStats {
   overall: StatsBucket;
   by_direction: { long: StatsBucket; short: StatsBucket; neutral: StatsBucket };
   by_origin: { analyst: StatsBucket; manual: StatsBucket };
+  // 按入场是否触发拆分，再各自分做多/做空（只统计方向性、且能判定触发状态的预测）。
+  by_trigger: {
+    entered: { long: StatsBucket; short: StatsBucket };
+    not_entered: { long: StatsBucket; short: StatsBucket };
+  };
 }
 
 // 按时间窗口拆分的战绩：今天 / 近3天 / 近7天 / 近1月 / 近3月 / 全部历史。

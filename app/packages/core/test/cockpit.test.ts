@@ -216,6 +216,54 @@ describe("judgeOutcome", () => {
     expect(result?.status).toBe("open");
   });
 
+  it("entered is null when the plan has no entry price", () => {
+    const bars: RawBar[] = [bar("2026-07-01T13:31:00Z", 100, 110, 99, 108)];
+    const result = judgeOutcome("long", anchor, { stop: 90, target1: 108 }, bars);
+    expect(result?.status).toBe("hit_target");
+    expect(result?.entered).toBeNull();
+  });
+
+  it("long phantom target: price rips to target without ever touching a dip-buy entry (entered=false)", () => {
+    const bars: RawBar[] = [
+      bar("2026-07-01T13:31:00Z", 100, 101, 99, 100),
+      bar("2026-07-01T13:32:00Z", 100, 108, 100, 107),
+    ];
+    const result = judgeOutcome("long", anchor, { entry: 95, stop: 90, target1: 108 }, bars);
+    expect(result?.status).toBe("hit_target");
+    expect(result?.entered).toBe(false);
+  });
+
+  it("long real target: price dips to entry first, then hits target (entered=true)", () => {
+    const bars: RawBar[] = [
+      bar("2026-07-01T13:31:00Z", 100, 101, 96, 98),
+      bar("2026-07-01T13:32:00Z", 100, 108, 100, 107),
+    ];
+    const result = judgeOutcome("long", anchor, { entry: 97, stop: 90, target1: 108 }, bars);
+    expect(result?.status).toBe("hit_target");
+    expect(result?.entered).toBe(true);
+  });
+
+  it("long stop after fill counts as entered=true", () => {
+    const bars: RawBar[] = [bar("2026-07-01T13:31:00Z", 100, 101, 88, 89)];
+    const result = judgeOutcome("long", anchor, { entry: 96, stop: 90, target1: 120 }, bars);
+    expect(result?.status).toBe("hit_stop");
+    expect(result?.entered).toBe(true);
+  });
+
+  it("market entry is always entered, even on a phantom-looking move", () => {
+    const bars: RawBar[] = [bar("2026-07-01T13:31:00Z", 100, 106, 100, 105)];
+    const result = judgeOutcome("long", anchor, { entry: 100, stop: 95, target1: 105, entry_kind: "market" }, bars);
+    expect(result?.status).toBe("hit_target");
+    expect(result?.entered).toBe(true);
+  });
+
+  it("breakout entry fills at the trigger, not the entry level", () => {
+    const bars: RawBar[] = [bar("2026-07-01T13:31:00Z", 100, 110, 100, 109)];
+    const result = judgeOutcome("long", anchor, { entry: 100, trigger: 104, stop: 95, target1: 110, entry_kind: "breakout" }, bars);
+    expect(result?.status).toBe("hit_target");
+    expect(result?.entered).toBe(true);
+  });
+
   it("returns null for neutral direction without a zone", () => {
     expect(judgeOutcome("neutral", anchor, { stop: 90, target1: 120 }, [])).toBeNull();
   });

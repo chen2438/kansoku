@@ -80,6 +80,10 @@ export function aggregateStats(rows: StatsRow[]): PredictionStats {
   const neutral = emptyBucket();
   const analyst = emptyBucket();
   const manual = emptyBucket();
+  const enteredLong = emptyBucket();
+  const enteredShort = emptyBucket();
+  const notEnteredLong = emptyBucket();
+  const notEnteredShort = emptyBucket();
 
   for (const row of rows) {
     addRow(overall, row.outcome);
@@ -87,6 +91,18 @@ export function aggregateStats(rows: StatsRow[]): PredictionStats {
     else if (row.direction === "short") addRow(short, row.outcome);
     else if (row.direction === "neutral") addRow(neutral, row.outcome);
     addRow(row.origin === "analyst" ? analyst : manual, row.outcome);
+    // 触发拆分只看方向性、且能判定触发状态的预测（观望无入场，老数据 entered 为 null 时跳过），
+    // 再各自分做多/做空。
+    if ((row.direction === "long" || row.direction === "short") && row.outcome && row.outcome.entered != null) {
+      const bucket = row.outcome.entered
+        ? row.direction === "long"
+          ? enteredLong
+          : enteredShort
+        : row.direction === "long"
+          ? notEnteredLong
+          : notEnteredShort;
+      addRow(bucket, row.outcome);
+    }
   }
 
   return {
@@ -94,5 +110,9 @@ export function aggregateStats(rows: StatsRow[]): PredictionStats {
     overall: finalize(overall),
     by_direction: { long: finalize(long), short: finalize(short), neutral: finalize(neutral) },
     by_origin: { analyst: finalize(analyst), manual: finalize(manual) },
+    by_trigger: {
+      entered: { long: finalize(enteredLong), short: finalize(enteredShort) },
+      not_entered: { long: finalize(notEnteredLong), short: finalize(notEnteredShort) },
+    },
   };
 }
