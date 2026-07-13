@@ -55,6 +55,47 @@ describe("binance testnet order", () => {
     ).rejects.toMatchObject({ code: "BINANCE_ORDER_NOT_CONFIRMED", status: 400 });
   });
 
+  it("skips an automatic order when a live position already exists", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/positionRisk")) {
+        return Response.json([{ symbol: "BTCUSDT", positionAmt: "0.003", positionSide: "BOTH" }]);
+      }
+      if (url.includes("/openOrders") || url.includes("/openAlgoOrders")) return Response.json([]);
+      return new Response("unexpected", { status: 500 });
+    });
+
+    await expect(binancePlaceTestnetOrder(
+      testnetCreds,
+      { ...validInput, requireFlat: true, clientOrderId: "k-batch-1-btcusdt" },
+      fetchMock as unknown as typeof fetch,
+    )).rejects.toMatchObject({
+      code: "BINANCE_EXISTING_EXPOSURE",
+      status: 409,
+      message: expect.stringContaining("已有多仓"),
+    });
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/premiumIndex"))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/fapi/v1/order"))).toBe(false);
+  });
+
+  it("skips an automatic order when a normal or conditional order already exists", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/positionRisk") || url.includes("/openOrders")) return Response.json([]);
+      if (url.includes("/openAlgoOrders")) return Response.json({ symbol: "BTCUSDT", algoId: 900 });
+      return new Response("unexpected", { status: 500 });
+    });
+
+    await expect(binancePlaceTestnetOrder(
+      testnetCreds,
+      { ...validInput, requireFlat: true, clientOrderId: "k-batch-1-btcusdt" },
+      fetchMock as unknown as typeof fetch,
+    )).rejects.toMatchObject({
+      code: "BINANCE_EXISTING_EXPOSURE",
+      message: expect.stringContaining("1 个条件单"),
+    });
+  });
+
   it("sets leverage, opens by calculated quantity, then places take-profit and stop-loss", async () => {
     let nextAlgoId = 900;
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -91,7 +132,7 @@ describe("binance testnet order", () => {
 
     const result = await binancePlaceTestnetOrder(
       testnetCreds,
-      { ...validInput, symbol: "btcusdt" },
+      { ...validInput, symbol: "btcusdt", clientOrderId: "k-batch-1-btcusdt" },
       fetchMock as unknown as typeof fetch,
     );
 
@@ -106,7 +147,9 @@ describe("binance testnet order", () => {
     const leverageRequest = requests.find((request) => request.url.endsWith("/fapi/v1/leverage"));
     expect(new URLSearchParams(String(leverageRequest?.init?.body)).get("leverage")).toBe("10");
     const entryRequest = requests.find((request) => request.url.endsWith("/fapi/v1/order") && request.init?.method === "POST");
-    expect(new URLSearchParams(String(entryRequest?.init?.body)).get("quantity")).toBe("0.004");
+    const entryBody = new URLSearchParams(String(entryRequest?.init?.body));
+    expect(entryBody.get("quantity")).toBe("0.004");
+    expect(entryBody.get("newClientOrderId")).toBe("k-batch-1-btcusdt");
     const protectionRequests = requests.filter((request) => request.url.endsWith("/fapi/v1/algoOrder"));
     expect(protectionRequests).toHaveLength(2);
     for (const request of protectionRequests) {
@@ -114,6 +157,7 @@ describe("binance testnet order", () => {
       expect(body.get("side")).toBe("SELL");
       expect(body.get("closePosition")).toBe("true");
       expect(body.get("workingType")).toBe("MARK_PRICE");
+      expect(body.get("clientAlgoId")).toMatch(/^k-batch-1-btcusdt-(tp|sl)$/);
       expect(body.get("signature")).toMatch(/^[a-f0-9]{64}$/);
     }
   });

@@ -325,6 +325,11 @@ interface RawAlgoOrder {
   triggerPrice?: string;
 }
 
+function rawPositionDirection(position: RawPosition): "LONG" | "SHORT" {
+  if (position.positionSide === "LONG" || position.positionSide === "SHORT") return position.positionSide;
+  return num(position.positionAmt) >= 0 ? "LONG" : "SHORT";
+}
+
 function decimalPlaces(step: string): number {
   const normalized = step.replace(/0+$/, "");
   const dot = normalized.indexOf(".");
@@ -406,6 +411,44 @@ export async function binancePlaceTestnetOrder(
   if (stopLossPrice !== null && (!Number.isFinite(stopLossPrice) || stopLossPrice <= 0)) {
     throw new ClientError("止损价格必须大于 0", "不需要止损时请留空", 400);
   }
+  const clientOrderId = input.clientOrderId == null ? null : String(input.clientOrderId).trim();
+  if (clientOrderId !== null && (!/^[.A-Za-z0-9_:/-]{1,30}$/.test(clientOrderId))) {
+    throw new ClientError("订单编号格式不正确", "订单编号只能使用字母、数字及 . _ : / -，且最多 30 个字符", 400);
+  }
+
+  if (input.requireFlat === true) {
+    const symbolParams = () => new URLSearchParams({ symbol });
+    const [livePositions, openOrders, openAlgoOrders] = await Promise.all([
+      signedGet<RawPosition[]>(creds, "/fapi/v2/positionRisk", symbolParams(), fetchImpl),
+      signedGet<RawOpenOrder[]>(creds, "/fapi/v1/openOrders", symbolParams(), fetchImpl),
+      signedGet<RawAlgoOrder[] | RawAlgoOrder>(creds, "/fapi/v1/openAlgoOrders", symbolParams(), fetchImpl),
+    ]);
+    const activePositions = (livePositions ?? []).filter((position) => position.symbol === symbol && num(position.positionAmt) !== 0);
+    if (activePositions.length > 0) {
+      const directions = [...new Set(activePositions.map(rawPositionDirection))]
+        .map((direction) => direction === "LONG" ? "多仓" : "空仓")
+        .join("和");
+      throw new ClientError(
+        `${symbol} 已有${directions}，自动批次已跳过，不加仓、不平仓、不反手`,
+        "如需执行新分析，请先在设置页人工处理现有仓位",
+        409,
+        "BINANCE_EXISTING_EXPOSURE",
+      );
+    }
+    const regularCount = (openOrders ?? []).length;
+    const algoCount = Array.isArray(openAlgoOrders) ? openAlgoOrders.length : openAlgoOrders ? 1 : 0;
+    if (regularCount > 0 || algoCount > 0) {
+      const details = [regularCount > 0 ? `${regularCount} 个普通挂单` : "", algoCount > 0 ? `${algoCount} 个条件单` : ""]
+        .filter(Boolean)
+        .join("、");
+      throw new ClientError(
+        `${symbol} 已有${details}，自动批次已跳过，避免重复订单`,
+        "请先核对并处理现有订单后再运行批量下单",
+        409,
+        "BINANCE_EXISTING_EXPOSURE",
+      );
+    }
+  }
 
   const [markRaw, exchangeInfo, positionMode] = await Promise.all([
     publicGet<{ markPrice?: string }>(creds, "/fapi/v1/premiumIndex", new URLSearchParams({ symbol }), fetchImpl),
@@ -475,6 +518,7 @@ export async function binancePlaceTestnetOrder(
     quantity: quantityText,
     newOrderRespType: "RESULT",
   });
+  if (clientOrderId) entryParams.set("newClientOrderId", clientOrderId);
   if (positionSide) entryParams.set("positionSide", positionSide);
   const entryRaw = await signedPost<RawPlacedOrder>(creds, "/fapi/v1/order", entryParams, fetchImpl);
   const entryOrder = placedOrder(entryRaw, { symbol, side: entrySide, quantity });
@@ -490,6 +534,7 @@ export async function binancePlaceTestnetOrder(
       workingType: "MARK_PRICE",
       closePosition: "true",
     });
+    if (clientOrderId) params.set("clientAlgoId", `${clientOrderId}-${type === "TAKE_PROFIT_MARKET" ? "tp" : "sl"}`);
     if (positionSide) params.set("positionSide", positionSide);
     const raw = await signedPost<RawAlgoOrder>(creds, "/fapi/v1/algoOrder", params, fetchImpl);
     return algoOrder(raw, { symbol, side: closeSide, type, triggerPrice });

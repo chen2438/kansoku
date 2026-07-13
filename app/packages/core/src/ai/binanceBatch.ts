@@ -99,13 +99,16 @@ async function processItem(index: number, deps: BinanceBatchDeps, autoTrade: boo
           item.tradeError = "分析缺少有效的止损价或目标1，已跳过下单";
         } else {
           try {
+            const batchToken = current?.id.replace("binance-top-", "").slice(-10) ?? "batch";
             const order = await deps.placeOrder({
               symbol: item.symbol,
               direction: after.direction === "long" ? "LONG" : "SHORT",
               initialMargin: 20,
-              leverage: 5,
+              leverage: 10,
               stopLossPrice,
               takeProfitPrice,
+              requireFlat: true,
+              clientOrderId: `k-${batchToken}-${item.rank}-${item.symbol.slice(0, 8).toLowerCase()}`,
               confirmed: true,
             });
             item.tradeOrderId = order.entryOrder.orderId;
@@ -116,7 +119,7 @@ async function processItem(index: number, deps: BinanceBatchDeps, autoTrade: boo
               item.tradeStatus = "submitted";
             }
           } catch (error) {
-            item.tradeStatus = "failed";
+            item.tradeStatus = error instanceof ClientError && error.code === "BINANCE_EXISTING_EXPOSURE" ? "skipped" : "failed";
             item.tradeError = readableError(error);
           }
         }

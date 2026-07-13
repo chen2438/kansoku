@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AiModel } from "../src/ai/models.js";
 import type { BinanceOpenedPositionResult } from "../src/contract/binanceAccount.js";
+import { ClientError } from "../src/errors.js";
 import {
   binanceTopAnalysisState,
   resetBinanceTopAnalysisForTests,
@@ -140,15 +141,50 @@ describe("Binance Top volume analysis", () => {
     expect(prepareTrading).toHaveBeenCalledOnce();
     const completed = await waitForCompletion();
     expect(placeOrder).toHaveBeenCalledTimes(2);
-    expect(placeOrder.mock.calls.map(([input]) => input)).toEqual(expect.arrayContaining([{
-      symbol: "BTCUSDT", direction: "LONG", initialMargin: 20, leverage: 5,
-      stopLossPrice: 90, takeProfitPrice: 120, confirmed: true,
-    }, {
-      symbol: "SOLUSDT", direction: "SHORT", initialMargin: 20, leverage: 5,
-      stopLossPrice: 110, takeProfitPrice: 80, confirmed: true,
-    }]));
+    expect(placeOrder.mock.calls.map(([input]) => input)).toEqual(expect.arrayContaining([expect.objectContaining({
+      symbol: "BTCUSDT", direction: "LONG", initialMargin: 20, leverage: 10,
+      stopLossPrice: 90, takeProfitPrice: 120, requireFlat: true, confirmed: true,
+      clientOrderId: expect.stringMatching(/^k-/),
+    }), expect.objectContaining({
+      symbol: "SOLUSDT", direction: "SHORT", initialMargin: 20, leverage: 10,
+      stopLossPrice: 110, takeProfitPrice: 80, requireFlat: true, confirmed: true,
+      clientOrderId: expect.stringMatching(/^k-/),
+    })]));
     expect(completed.items.map((item) => item.tradeStatus)).toEqual(["submitted", "skipped", "submitted"]);
     expect(completed.items.map((item) => item.tradeOrderId)).toEqual([101, undefined, 102]);
+  });
+
+  it("marks an existing position or order as skipped instead of a trade failure", async () => {
+    const latest = new Map<string, string>();
+    const deps: BinanceBatchDeps = {
+      leaders: vi.fn().mockResolvedValue([leaders[0]]),
+      analystModel: () => model,
+      run: (({ symbol }: { symbol: string }) => ({
+        started: true,
+        done: Promise.resolve().then(() => latest.set(symbol, `chart-${symbol}`)),
+      })) as BinanceBatchDeps["run"],
+      latestSummary: async (symbol) => latest.has(symbol)
+        ? { id: latest.get(symbol)!, direction: "long", entryStatus: "waiting", stopLossPrice: 90, takeProfitPrice: 120 }
+        : null,
+      prepareTrading: vi.fn(async () => {}),
+      placeOrder: vi.fn(async () => {
+        throw new ClientError(
+          "BTCUSDT 已有多仓，自动批次已跳过",
+          "请先人工处理现有仓位",
+          409,
+          "BINANCE_EXISTING_EXPOSURE",
+        );
+      }),
+      now: () => 1_750_000_000_000,
+    };
+
+    await startBinanceTopAnalysis({ autoTrade: true, confirmed: true }, deps);
+    const completed = await waitForCompletion();
+    expect(completed.items[0]).toMatchObject({
+      status: "completed",
+      tradeStatus: "skipped",
+      tradeError: expect.stringContaining("已有多仓"),
+    });
   });
 
   it("requires one explicit confirmation before preparing batch trading", async () => {

@@ -27,6 +27,7 @@ function itemLabel(item: BinanceBatchItem): string {
   const status = item.entryStatus ? ENTRY_STATUS_LABEL[item.entryStatus] : null;
   if (item.tradeStatus === "pending") return `${dir} · 等待下单`;
   if (item.tradeStatus === "submitted") return `${dir} · 已下单 #${item.tradeOrderId ?? "—"}`;
+  if (item.tradeStatus === "skipped") return `${dir} · 已有仓位或挂单，已跳过`;
   if (item.tradeStatus === "failed") return `${dir} · 下单失败${item.tradeOrderId ? ` #${item.tradeOrderId}` : ""}`;
   return status ? `${dir}（${status}）` : dir;
 }
@@ -53,7 +54,7 @@ export function BinanceTopAnalysis() {
 
   const start = async (autoTrade = false) => {
     if (autoTrade && !window.confirm(
-      "确认启动测试网 AI 分析并下单？\n\n最多分析 20 个标的。每个做多或做空结论都会立即按 20 USDT 初始保证金、5 倍杠杆市价开仓，目标1止盈、AI 止损价止损。观望不下单。\n\n这只允许连接 Binance 期货测试网后执行。",
+      "确认启动测试网 AI 分析并下单？\n\n最多分析 20 个标的。每个做多或做空结论都会立即按 20 USDT 初始保证金、10 倍杠杆市价开仓，目标1止盈、AI 止损价止损。观望不下单。\n\n这只允许连接 Binance 期货测试网后执行。",
     )) return;
     setStarting(true);
     setError(null);
@@ -73,7 +74,8 @@ export function BinanceTopAnalysis() {
       failed: items.filter((item) => item.status === "failed").length,
       traded: items.filter((item) => item.tradeStatus === "submitted").length,
       tradeFailed: items.filter((item) => item.tradeStatus === "failed").length,
-      skipped: items.filter((item) => item.tradeStatus === "skipped").length,
+      neutralSkipped: items.filter((item) => item.tradeStatus === "skipped" && item.direction === "neutral").length,
+      exposureSkipped: items.filter((item) => item.tradeStatus === "skipped" && item.direction !== "neutral").length,
       total: items.length,
     };
   }, [batch]);
@@ -103,7 +105,7 @@ export function BinanceTopAnalysis() {
         {batch && (
           <span className="binance-batch-summary">
             {counts.done}/{counts.total} 完成{counts.failed > 0 ? ` · ${counts.failed} 分析失败` : ""}
-            {batch.mode === "analysis_and_trade" ? ` · ${counts.traded} 已下单 · ${counts.skipped} 观望 · ${counts.tradeFailed} 下单失败` : ""}
+            {batch.mode === "analysis_and_trade" ? ` · ${counts.traded} 已下单 · ${counts.neutralSkipped} 观望 · ${counts.exposureSkipped} 已有仓位/挂单跳过 · ${counts.tradeFailed} 下单失败` : ""}
           </span>
         )}
       </div>

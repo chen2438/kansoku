@@ -59,6 +59,10 @@ export interface BinancePlaceTestnetOrderInput {
   leverage: number;
   takeProfitPrice?: number;
   stopLossPrice?: number;
+  // 自动批次使用：下单前只要发现该标的已有持仓、普通挂单或条件单，就拒绝本次开仓。
+  requireFlat?: boolean;
+  // 自动批次使用稳定编号，避免同一批次重试时产生无法辨认的重复订单。
+  clientOrderId?: string;
   // 页面必须在用户看过订单摘要并确认后才传 true；服务端仍会再次校验测试网。
   confirmed: boolean;
 }
