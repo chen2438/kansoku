@@ -1,5 +1,6 @@
 import type { PortfolioSummary } from "../../../../shared/types";
 import { fmt, signed, upDown } from "../../format";
+import { openSymbolContextMenu } from "../../desktop/newTab";
 import { Card, Dot, ErrorBox } from "../../ui";
 
 function signedMoney(value: number): string {
@@ -38,7 +39,7 @@ export function PositionsCard({
       <div className="positions-list">
         {portfolio.positions.map((p) => (
           <div key={p.symbol} className="positions-row">
-            <a className="sym" href={`/symbol/${encodeURIComponent(p.symbol)}`}>
+            <a className="sym" href={`/symbol/${encodeURIComponent(p.symbol)}`} onContextMenu={(e) => openSymbolContextMenu(p.symbol, e)}>
               {watching.has(p.symbol) && <Dot title="今日跟踪中" />}
               {p.symbol.replace(/\.US$/, "")}
             </a>

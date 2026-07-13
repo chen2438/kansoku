@@ -5,6 +5,7 @@ import { signed } from "../../format";
 import { symbolAnalysisPath } from "../../../../shared/chartUrl";
 import { marketDate } from "../../../../shared/time";
 import { client } from "../../client";
+import { openSymbolContextMenu } from "../../desktop/newTab";
 import { Badge, Card, ErrorBox, MarketTime, Num, SectionTitle } from "../../ui";
 import { useIntervalFetch } from "../cockpit/useIntervalFetch";
 
@@ -91,7 +92,7 @@ function SettlementTable({ recap, emptyLabel }: { recap: OverviewRecap; emptyLab
   return (
     <div className="recap-settlements">
       {recap.settlements.map((s) => (
-        <Card link key={s.symbol} className="recap-row" href={symbolAnalysisPath(s.symbol, s.chart_id)}>
+        <Card link key={s.symbol} className="recap-row" href={symbolAnalysisPath(s.symbol, s.chart_id)} onContextMenu={(e) => openSymbolContextMenu(s.symbol, e)}>
           <span className="sym">{s.symbol.replace(/\.US$/, "")}</span>
           <span className="dir">{s.direction ? DIRECTION_LABEL[s.direction] : "—"}</span>
           {s.day_pct != null ? <Num value={s.day_pct} diff suffix="%" /> : <span>—</span>}

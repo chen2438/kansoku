@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { navigate } from "../../router";
 import { listRecentSymbols } from "../../recentCharts";
+import { openSymbolContextMenu } from "../../desktop/newTab";
 import { Chip, Input } from "../../ui";
 import { client } from "../../client";
 import { errorMessage } from "../../api";
@@ -45,7 +46,7 @@ export function QuickBar({ shortcuts }: { shortcuts: string[] }) {
         }}
       />{inputError && <span className="quickbar-error">{inputError}</span>}</div>
       {shortcuts.map((sym) => (
-        <Chip key={sym} className="quickbar-shortcut" href={`/symbol/${encodeURIComponent(sym)}`}>
+        <Chip key={sym} className="quickbar-shortcut" href={`/symbol/${encodeURIComponent(sym)}`} onContextMenu={(e) => openSymbolContextMenu(sym, e)}>
           {sym.replace(/\.US$/, "")}
         </Chip>
       ))}
@@ -53,7 +54,7 @@ export function QuickBar({ shortcuts }: { shortcuts: string[] }) {
         <span className="quickbar-recent">
           最近：
           {recent.map((s) => (
-            <a key={s.symbol} href={`/symbol/${encodeURIComponent(s.symbol)}`}>
+            <a key={s.symbol} href={`/symbol/${encodeURIComponent(s.symbol)}`} onContextMenu={(e) => openSymbolContextMenu(s.symbol, e)}>
               {s.symbol.replace(/\.US$/, "")}
             </a>
           ))}

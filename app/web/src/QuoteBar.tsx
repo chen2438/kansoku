@@ -1,12 +1,17 @@
 import { useState } from "react";
 import type { QuoteCell, QuoteSnapshot } from "../../shared/types";
+import { openSymbolContextMenu } from "./desktop/newTab";
 import { isCryptoSymbol, priceDecimals, priceStr, signed, upDown } from "./format";
 import { useSSE } from "./useSSE";
 import { Badge, Dot } from "./ui";
 
 function Cell({ q }: { q: QuoteCell }) {
   return (
-    <a className="quote-cell" href={`/symbol/${encodeURIComponent(q.symbol)}`}>
+    <a
+      className="quote-cell"
+      href={`/symbol/${encodeURIComponent(q.symbol)}`}
+      onContextMenu={(e) => openSymbolContextMenu(q.symbol, e)}
+    >
       <span className="qc-symbol">{q.symbol.replace(/\.US$/, "")}</span>
       <span className={`num qc-price ${upDown(q.pct)}`}>${priceStr(q.last, priceDecimals(q.last, isCryptoSymbol(q.symbol)))}</span>
       <span className={`num qc-pct ${upDown(q.pct)}`}>{signed(q.pct)}%</span>

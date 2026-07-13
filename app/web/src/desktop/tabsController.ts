@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createMemoryRouteStore, __setActiveRouteStore, type RouteStore } from "../router";
 import { __setActiveTitleSink } from "../useTitle";
 import { getDesktopTabsBridge } from "./desktopTabsBridge";
+import { __setNewTabOpener } from "./newTab";
 import * as tabsStore from "./tabsStore";
 import { loadTabsSnapshot, saveTabsSnapshot, type TabsSnapshot, type TabState } from "./tabsStore";
 
@@ -65,6 +66,15 @@ export function useTabsController(): TabsController {
   const openHomeTab = useCallback(() => {
     setSnapshot((prev) => tabsStore.openTab(withCurrentScrollCaptured(prev), "/"));
   }, []);
+
+  const openRouteInNewTab = useCallback((route: string) => {
+    setSnapshot((prev) => tabsStore.openTab(withCurrentScrollCaptured(prev), route));
+  }, []);
+
+  useEffect(() => {
+    __setNewTabOpener(openRouteInNewTab);
+    return () => __setNewTabOpener(null);
+  }, [openRouteInNewTab]);
 
   const focusOrOpenSettings = useCallback(() => {
     setSnapshot((prev) => tabsStore.focusOrOpenRoute(withCurrentScrollCaptured(prev), "/settings"));

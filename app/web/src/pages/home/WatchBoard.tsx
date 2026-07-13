@@ -3,6 +3,7 @@ import { Check } from "lucide-react";
 import type { OverviewBoard, OverviewRow } from "../../../../shared/types";
 import { errorMessage } from "../../api";
 import { client } from "../../client";
+import { openSymbolContextMenu } from "../../desktop/newTab";
 import { isCryptoSymbol, priceDecimals, priceStr, signed } from "../../format";
 import { Badge, Button, Card, Dot, Empty, ErrorBox, MarketTime, Num } from "../../ui";
 import { directionTone } from "../../charts/intraday/directionLabels";
@@ -59,7 +60,12 @@ function ReassessButton({ symbol }: { symbol: string }) {
 function SymbolCard({ row }: { row: OverviewRow }) {
   const comment = row.latest_comment;
   return (
-    <Card link className="symbol-card" href={`/symbol/${encodeURIComponent(row.symbol)}`}>
+    <Card
+      link
+      className="symbol-card"
+      href={`/symbol/${encodeURIComponent(row.symbol)}`}
+      onContextMenu={(e) => openSymbolContextMenu(row.symbol, e)}
+    >
       <div className="symbol-card-head">
         <span className="sym">{row.symbol}</span>
         {row.direction && (
@@ -109,7 +115,13 @@ export function WatchBoard({
     return (
       <div className="watch-strip">
         {board.rows.map((row) => (
-          <Card link className="watch-strip-cell" key={row.symbol} href={`/symbol/${encodeURIComponent(row.symbol)}`}>
+          <Card
+            link
+            className="watch-strip-cell"
+            key={row.symbol}
+            href={`/symbol/${encodeURIComponent(row.symbol)}`}
+            onContextMenu={(e) => openSymbolContextMenu(row.symbol, e)}
+          >
             <span className="sym">{row.symbol.replace(/\.US$/, "")}</span>
             {row.direction && (
               <Badge tone={directionTone(row.direction)}>

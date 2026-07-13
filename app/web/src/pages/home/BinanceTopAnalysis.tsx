@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { BinanceBatchItem, BinanceBatchState } from "../../../../packages/core/src/contract/symbols";
 import { errorMessage } from "../../api";
 import { client } from "../../client";
+import { openSymbolContextMenu } from "../../desktop/newTab";
 import { Button, ErrorBox } from "../../ui";
 
 const POLL_MS = 2_000;
@@ -82,7 +83,7 @@ export function BinanceTopAnalysis() {
       {batch && (
         <div className="binance-batch-items">
           {batch.items.map((item) => (
-            <a key={item.symbol} className={`binance-batch-item is-${item.status}`} href={`/symbol/${encodeURIComponent(item.symbol)}`} title={item.error ?? `24h 成交额 ${item.quoteVolume.toLocaleString("zh-CN")} USDT`}>
+            <a key={item.symbol} className={`binance-batch-item is-${item.status}`} href={`/symbol/${encodeURIComponent(item.symbol)}`} onContextMenu={(e) => openSymbolContextMenu(item.symbol, e)} title={item.error ?? `24h 成交额 ${item.quoteVolume.toLocaleString("zh-CN")} USDT`}>
               <span>{item.rank}. {item.symbol}</span>
               <span>{itemLabel(item)}</span>
             </a>
