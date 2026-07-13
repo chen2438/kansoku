@@ -3,6 +3,7 @@ import { binanceAccountService } from "../../../../packages/core/src/modules/bin
 import type {
   BinanceAccountConnectInput,
   BinanceCancelTestnetOrderInput,
+  BinanceCloseAllTestnetPositionsInput,
   BinanceCloseTestnetPositionInput,
   BinancePlaceTestnetOrderInput,
 } from "../../../../packages/core/src/contract/binanceAccount.js";
@@ -34,6 +35,11 @@ export class BinanceAccountController {
     return { ok: true, data: await binanceAccountService.positions() };
   }
 
+  @Get("/closed-position-history")
+  async getClosedPositionHistory() {
+    return { ok: true, data: await binanceAccountService.closedPositionHistory() };
+  }
+
   @Get("/open-orders")
   async getOpenOrders() {
     return { ok: true, data: await binanceAccountService.openOrders() };
@@ -47,6 +53,11 @@ export class BinanceAccountController {
   @Post("/testnet/positions/close")
   async postCloseTestnetPosition(@Body() body: BinanceCloseTestnetPositionInput) {
     return { ok: true, data: await binanceAccountService.closeTestnetPosition(body) };
+  }
+
+  @Post("/testnet/positions/close-all")
+  async postCloseAllTestnetPositions(@Body() body: BinanceCloseAllTestnetPositionsInput) {
+    return { ok: true, data: await binanceAccountService.closeAllTestnetPositions(body) };
   }
 
   @Post("/testnet/orders/cancel")

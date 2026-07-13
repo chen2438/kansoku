@@ -256,7 +256,7 @@ export function BinanceAccountCard() {
             <div key={`${p.symbol}:${p.side}`} className="settings-binance-position-row">
               <span className="settings-cred-meta">
                 {p.symbol} {p.side === "long" ? "多" : "空"} {Math.abs(p.positionAmt)} @ {priceStr(p.entryPrice)} · 标记{" "}
-                {priceStr(p.markPrice)} · 浮盈亏 {usd(p.unrealizedPnl)} · {p.leverage}x
+                {priceStr(p.markPrice)} · 净浮盈亏 {usd(p.netUnrealizedPnl)} · {p.leverage}x
               </span>
               {status.testnet && (
                 <Button

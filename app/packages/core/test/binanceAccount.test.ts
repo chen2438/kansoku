@@ -1,9 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   binanceCancelTestnetOrder,
+  binanceClosedPositionHistory,
+  binanceCloseAllTestnetPositions,
   binanceCloseTestnetPosition,
   binancePlaceTestnetOrder,
+  binancePositions,
   signQuery,
+  summarizeBinanceClosedPositions,
 } from "../src/services/marketdata/binanceAccount.js";
 
 describe("binance account signing", () => {
@@ -19,6 +23,91 @@ describe("binance account signing", () => {
     const q = "timestamp=1700000000000&recvWindow=5000";
     expect(signQuery("abc", q)).toBe(signQuery("abc", q));
     expect(signQuery("abc", q)).not.toBe(signQuery("abd", q));
+  });
+});
+
+describe("binance closed-position history", () => {
+  it("sums realized PnL with every position-related fee adjustment", () => {
+    const rows = summarizeBinanceClosedPositions([
+      { symbol: "BTCUSDT", asset: "USDT", incomeType: "REALIZED_PNL", income: "10", time: 100, tranId: 1 },
+      { symbol: "BTCUSDT", asset: "USDT", incomeType: "COMMISSION", income: "-0.5", time: 50, tranId: 2 },
+      { symbol: "BTCUSDT", asset: "USDT", incomeType: "COMMISSION", income: "-0.4", time: 100, tranId: 3 },
+      { symbol: "BTCUSDT", asset: "USDT", incomeType: "FUNDING_FEE", income: "-0.1", time: 80, tranId: 4 },
+      { symbol: "BTCUSDT", asset: "USDT", incomeType: "COMMISSION_REBATE", income: "0.05", time: 110, tranId: 5 },
+      { symbol: "BTCUSDT", asset: "USDT", incomeType: "INSURANCE_CLEAR", income: "-0.25", time: 100, tranId: 6 },
+      { symbol: "BTCUSDT", asset: "USDT", incomeType: "TRANSFER", income: "1000", time: 120, tranId: 7 },
+      { symbol: "ETHUSDT", asset: "USDT", incomeType: "REALIZED_PNL", income: "-2", time: 200, tranId: 8 },
+      { symbol: "ETHUSDT", asset: "USDT", incomeType: "COMMISSION", income: "-0.2", time: 200, tranId: 9 },
+      { symbol: "XRPUSDT", asset: "USDT", incomeType: "COMMISSION", income: "-0.1", time: 300, tranId: 10 },
+    ]);
+
+    expect(rows).toEqual([
+      expect.objectContaining({
+        symbol: "ETHUSDT", realizedPnl: -2, commission: -0.2, fundingFee: 0,
+        otherAdjustments: 0, netPnl: -2.2, lastClosedAt: 200, realizedEventCount: 1,
+      }),
+      expect.objectContaining({
+        symbol: "BTCUSDT", realizedPnl: 10, commission: -0.9, fundingFee: -0.1,
+        otherAdjustments: -0.2, netPnl: 8.8, lastClosedAt: 100, realizedEventCount: 1,
+      }),
+    ]);
+  });
+
+  it("requests the full 90-day income window with Binance pagination", async () => {
+    const now = Date.UTC(2026, 6, 13);
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL) => Response.json([
+      { symbol: "BTCUSDT", asset: "USDT", incomeType: "REALIZED_PNL", income: "1.2", time: now - 1_000, tranId: 1 },
+      { symbol: "BTCUSDT", asset: "USDT", incomeType: "COMMISSION", income: "-0.2", time: now - 1_000, tranId: 2 },
+    ]));
+
+    const result = await binanceClosedPositionHistory(
+      { apiKey: "test-key", apiSecret: "test-secret", testnet: true },
+      fetchMock as unknown as typeof fetch,
+      now,
+    );
+
+    expect(result).toMatchObject({ from: now - 90 * 24 * 60 * 60 * 1000, to: now });
+    expect(result.rows[0]).toMatchObject({ symbol: "BTCUSDT", realizedPnl: 1.2, commission: -0.2, netPnl: 1 });
+    const url = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(url.pathname).toBe("/fapi/v1/income");
+    expect(url.searchParams.get("startTime")).toBe(String(result.from));
+    expect(url.searchParams.get("endTime")).toBe(String(now));
+    expect(url.searchParams.get("page")).toBe("1");
+    expect(url.searchParams.get("limit")).toBe("1000");
+  });
+});
+
+describe("binance current-position net PnL", () => {
+  it("calculates long and short PnL from Binance break-even prices", async () => {
+    const fetchMock = vi.fn(async () => Response.json([
+      {
+        symbol: "BTCUSDT", positionAmt: "2", positionSide: "BOTH", entryPrice: "100",
+        breakEvenPrice: "101", markPrice: "105", unRealizedProfit: "10", leverage: "10", liquidationPrice: "50",
+      },
+      {
+        symbol: "ETHUSDT", positionAmt: "-3", positionSide: "BOTH", entryPrice: "198",
+        breakEvenPrice: "200", markPrice: "190", unRealizedProfit: "25", leverage: "5", liquidationPrice: "250",
+      },
+      {
+        symbol: "XRPUSDT", positionAmt: "4", positionSide: "BOTH", entryPrice: "1",
+        breakEvenPrice: "0", markPrice: "1.1", unRealizedProfit: "0.4", leverage: "3", liquidationPrice: "0.5",
+      },
+    ]));
+
+    const positions = await binancePositions(
+      { apiKey: "test-key", apiSecret: "test-secret", testnet: true },
+      fetchMock as unknown as typeof fetch,
+    );
+
+    expect(positions[0]).toMatchObject({
+      symbol: "BTCUSDT", breakEvenPrice: 101, netUnrealizedPnl: 8, netUnrealizedPnlIncludesCosts: true,
+    });
+    expect(positions[1]).toMatchObject({
+      symbol: "ETHUSDT", breakEvenPrice: 200, netUnrealizedPnl: 30, netUnrealizedPnlIncludesCosts: true,
+    });
+    expect(positions[2]).toMatchObject({
+      symbol: "XRPUSDT", netUnrealizedPnl: 0.4, netUnrealizedPnlIncludesCosts: false,
+    });
   });
 });
 
@@ -279,6 +368,48 @@ describe("binance testnet order", () => {
       ),
     ).rejects.toMatchObject({ code: "BINANCE_MAINNET_ORDER_BLOCKED", status: 403 });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("closes every live testnet position and keeps going after one failure", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/positionRisk")) {
+        const symbol = url.searchParams.get("symbol");
+        if (!symbol) {
+          return Response.json([
+            { symbol: "BTCUSDT", positionAmt: "0.002", positionSide: "BOTH" },
+            { symbol: "ETHUSDT", positionAmt: "-0.03", positionSide: "BOTH" },
+          ]);
+        }
+        return Response.json(symbol === "BTCUSDT"
+          ? [{ symbol, positionAmt: "0.002", positionSide: "BOTH" }]
+          : [{ symbol, positionAmt: "-0.03", positionSide: "BOTH" }]);
+      }
+      if (url.pathname.endsWith("/order") && init?.method === "POST") {
+        const body = new URLSearchParams(String(init.body));
+        if (body.get("symbol") === "ETHUSDT") {
+          return Response.json({ code: -2019, msg: "Margin is insufficient." }, { status: 400 });
+        }
+        return Response.json({
+          symbol: "BTCUSDT", orderId: 700, side: "SELL", type: "MARKET", status: "FILLED",
+          origQty: "0.002", executedQty: "0.002", avgPrice: "50000", reduceOnly: true,
+        });
+      }
+      return new Response("unexpected", { status: 500 });
+    });
+
+    const result = await binanceCloseAllTestnetPositions(
+      testnetCreds,
+      { confirmed: true },
+      fetchMock as unknown as typeof fetch,
+    );
+
+    expect(result.closed).toEqual([expect.objectContaining({ symbol: "BTCUSDT", orderId: 700 })]);
+    expect(result.failures).toEqual([
+      expect.objectContaining({ symbol: "ETHUSDT", direction: "SHORT", error: expect.stringContaining("-2019") }),
+    ]);
+    const orderRequests = fetchMock.mock.calls.filter(([, init]) => init?.method === "POST");
+    expect(orderRequests).toHaveLength(2);
   });
 
   it("sends a signed cancellation only to the futures testnet", async () => {

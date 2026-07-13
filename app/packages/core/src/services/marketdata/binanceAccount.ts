@@ -4,7 +4,11 @@ import type {
   BinanceAccountBalance,
   BinanceAlgoOrderResult,
   BinanceCancelTestnetOrderInput,
+  BinanceCloseAllTestnetPositionsInput,
+  BinanceCloseAllTestnetPositionsResult,
   BinanceCloseTestnetPositionInput,
+  BinanceClosedPositionHistory,
+  BinanceClosedPositionSummary,
   BinanceOpenOrderRow,
   BinanceOpenedPositionResult,
   BinancePlacedOrder,
@@ -224,6 +228,7 @@ interface RawPosition {
   symbol: string;
   positionAmt: string;
   entryPrice: string;
+  breakEvenPrice?: string;
   markPrice: string;
   unRealizedProfit: string;
   leverage: string;
@@ -231,11 +236,18 @@ interface RawPosition {
   positionSide?: string;
 }
 
-export async function binancePositions(creds: BinanceAccountCreds): Promise<BinancePositionRow[]> {
-  const raw = await signedGet<RawPosition[]>(creds, "/fapi/v2/positionRisk");
+export async function binancePositions(
+  creds: BinanceAccountCreds,
+  fetchImpl: typeof fetch = fetch,
+): Promise<BinancePositionRow[]> {
+  const raw = await signedGet<RawPosition[]>(creds, "/fapi/v2/positionRisk", new URLSearchParams(), fetchImpl);
   return (raw ?? [])
     .map((p) => {
       const amt = num(p.positionAmt);
+      const breakEvenPrice = num(p.breakEvenPrice);
+      const markPrice = num(p.markPrice);
+      const unrealizedPnl = num(p.unRealizedProfit);
+      const netUnrealizedPnlIncludesCosts = breakEvenPrice > 0;
       const side = p.positionSide === "LONG"
         ? ("long" as const)
         : p.positionSide === "SHORT"
@@ -246,13 +258,112 @@ export async function binancePositions(creds: BinanceAccountCreds): Promise<Bina
         side,
         positionAmt: amt,
         entryPrice: num(p.entryPrice),
-        markPrice: num(p.markPrice),
-        unrealizedPnl: num(p.unRealizedProfit),
+        breakEvenPrice,
+        markPrice,
+        unrealizedPnl,
+        netUnrealizedPnl: netUnrealizedPnlIncludesCosts ? (markPrice - breakEvenPrice) * amt : unrealizedPnl,
+        netUnrealizedPnlIncludesCosts,
         leverage: num(p.leverage),
         liquidationPrice: num(p.liquidationPrice),
       };
     })
     .filter((p) => p.positionAmt !== 0);
+}
+
+interface RawIncomeRow {
+  symbol?: string;
+  incomeType?: string;
+  income?: string;
+  asset?: string;
+  time?: number;
+  tranId?: number;
+  tradeId?: string;
+}
+
+const CLOSED_POSITION_INCOME_TYPES = new Set([
+  "REALIZED_PNL",
+  "COMMISSION",
+  "FUNDING_FEE",
+  "INSURANCE_CLEAR",
+  "COMMISSION_REBATE",
+  "API_REBATE",
+  "FEE_RETURN",
+  "POSITION_LIMIT_INCREASE_FEE",
+]);
+
+export function summarizeBinanceClosedPositions(rawRows: RawIncomeRow[]): BinanceClosedPositionSummary[] {
+  const rows = rawRows.filter((row) => row.symbol && row.asset && CLOSED_POSITION_INCOME_TYPES.has(row.incomeType ?? ""));
+  const closedKeys = new Set(
+    rows
+      .filter((row) => row.incomeType === "REALIZED_PNL")
+      .map((row) => `${row.symbol}:${row.asset}`),
+  );
+  const summaries = new Map<string, BinanceClosedPositionSummary>();
+
+  for (const row of rows) {
+    const key = `${row.symbol}:${row.asset}`;
+    if (!closedKeys.has(key)) continue;
+    const summary = summaries.get(key) ?? {
+      symbol: row.symbol!,
+      asset: row.asset!,
+      realizedPnl: 0,
+      commission: 0,
+      fundingFee: 0,
+      otherAdjustments: 0,
+      netPnl: 0,
+      lastClosedAt: 0,
+      realizedEventCount: 0,
+    };
+    const income = num(row.income);
+    if (row.incomeType === "REALIZED_PNL") {
+      summary.realizedPnl += income;
+      summary.realizedEventCount += 1;
+      summary.lastClosedAt = Math.max(summary.lastClosedAt, num(row.time));
+    } else if (row.incomeType === "COMMISSION") {
+      summary.commission += income;
+    } else if (row.incomeType === "FUNDING_FEE") {
+      summary.fundingFee += income;
+    } else {
+      summary.otherAdjustments += income;
+    }
+    summaries.set(key, summary);
+  }
+
+  return [...summaries.values()]
+    .map((summary) => ({
+      ...summary,
+      netPnl: summary.realizedPnl + summary.commission + summary.fundingFee + summary.otherAdjustments,
+    }))
+    .sort((a, b) => b.lastClosedAt - a.lastClosedAt || a.symbol.localeCompare(b.symbol));
+}
+
+export async function binanceClosedPositionHistory(
+  creds: BinanceAccountCreds,
+  fetchImpl: typeof fetch = fetch,
+  now = Date.now(),
+): Promise<BinanceClosedPositionHistory> {
+  const from = now - 90 * 24 * 60 * 60 * 1000;
+  const rawRows: RawIncomeRow[] = [];
+  const seen = new Set<string>();
+
+  for (let page = 1; page <= 20; page += 1) {
+    const params = new URLSearchParams({
+      startTime: String(from),
+      endTime: String(now),
+      page: String(page),
+      limit: "1000",
+    });
+    const pageRows = await signedGet<RawIncomeRow[]>(creds, "/fapi/v1/income", params, fetchImpl);
+    for (const row of pageRows ?? []) {
+      const key = `${row.incomeType ?? ""}:${row.tranId ?? ""}:${row.tradeId ?? ""}:${row.asset ?? ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      rawRows.push(row);
+    }
+    if (!pageRows || pageRows.length < 1000) break;
+  }
+
+  return { from, to: now, rows: summarizeBinanceClosedPositions(rawRows) };
 }
 
 interface RawOpenOrder {
@@ -615,6 +726,42 @@ export async function binanceCloseTestnetPosition(
   }
   const raw = await signedPost<RawPlacedOrder>(creds, "/fapi/v1/order", params, fetchImpl);
   return placedOrder(raw, { symbol, side, quantity: num(quantityText) });
+}
+
+export async function binanceCloseAllTestnetPositions(
+  creds: BinanceAccountCreds,
+  input: BinanceCloseAllTestnetPositionsInput,
+  fetchImpl: typeof fetch = fetch,
+): Promise<BinanceCloseAllTestnetPositionsResult> {
+  if (!creds.testnet) {
+    throw new ClientError("主网全部平仓已禁止", "请连接 Binance 期货测试网账号后再操作", 403, "BINANCE_MAINNET_ORDER_BLOCKED");
+  }
+  if (!input?.confirmed) {
+    throw new ClientError("全部平仓尚未确认", "请先核对所有持仓并确认市价平仓", 400, "BINANCE_ORDER_NOT_CONFIRMED");
+  }
+
+  const livePositions = await signedGet<RawPosition[]>(creds, "/fapi/v2/positionRisk", new URLSearchParams(), fetchImpl);
+  const targets = (livePositions ?? []).filter((position) => num(position.positionAmt) !== 0);
+  const result: BinanceCloseAllTestnetPositionsResult = { closed: [], failures: [] };
+
+  for (const position of targets) {
+    const direction = rawPositionDirection(position);
+    try {
+      result.closed.push(await binanceCloseTestnetPosition(
+        creds,
+        { symbol: position.symbol, direction, confirmed: true },
+        fetchImpl,
+      ));
+    } catch (error) {
+      result.failures.push({
+        symbol: position.symbol,
+        direction,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  return result;
 }
 
 export async function binanceCancelTestnetOrder(

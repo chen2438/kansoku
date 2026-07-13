@@ -33,10 +33,31 @@ export interface BinancePositionRow {
   side: "long" | "short" | "flat";
   positionAmt: number;
   entryPrice: number;
+  breakEvenPrice: number;
   markPrice: number;
   unrealizedPnl: number;
+  netUnrealizedPnl: number;
+  netUnrealizedPnlIncludesCosts: boolean;
   leverage: number;
   liquidationPrice: number;
+}
+
+export interface BinanceClosedPositionSummary {
+  symbol: string;
+  asset: string;
+  realizedPnl: number;
+  commission: number;
+  fundingFee: number;
+  otherAdjustments: number;
+  netPnl: number;
+  lastClosedAt: number;
+  realizedEventCount: number;
+}
+
+export interface BinanceClosedPositionHistory {
+  from: number;
+  to: number;
+  rows: BinanceClosedPositionSummary[];
 }
 
 export interface BinanceOpenOrderRow {
@@ -94,6 +115,19 @@ export interface BinanceCloseTestnetPositionInput {
   confirmed: boolean;
 }
 
+export interface BinanceCloseAllTestnetPositionsInput {
+  confirmed: boolean;
+}
+
+export interface BinanceCloseAllTestnetPositionsResult {
+  closed: BinancePlacedOrder[];
+  failures: Array<{
+    symbol: string;
+    direction: "LONG" | "SHORT";
+    error: string;
+  }>;
+}
+
 export interface BinanceAlgoOrderResult {
   algoId: number;
   clientAlgoId: string;
@@ -124,9 +158,11 @@ export interface BinanceAccountApi {
   disconnect(): Promise<{ ok: true }>;
   balance(): Promise<BinanceAccountBalance>;
   positions(): Promise<BinancePositionRow[]>;
+  closedPositionHistory(): Promise<BinanceClosedPositionHistory>;
   openOrders(): Promise<BinanceOpenOrderRow[]>;
   placeTestnetOrder(input: BinancePlaceTestnetOrderInput): Promise<BinanceOpenedPositionResult>;
   closeTestnetPosition(input: BinanceCloseTestnetPositionInput): Promise<BinancePlacedOrder>;
+  closeAllTestnetPositions(input: BinanceCloseAllTestnetPositionsInput): Promise<BinanceCloseAllTestnetPositionsResult>;
   cancelTestnetOrder(input: BinanceCancelTestnetOrderInput): Promise<BinancePlacedOrder>;
 }
 
@@ -136,8 +172,10 @@ export const binanceAccountRoutes = defineRoutes<BinanceAccountApi>("binanceAcco
   disconnect: { method: "DELETE", path: "/disconnect" },
   balance: { method: "GET", path: "/balance" },
   positions: { method: "GET", path: "/positions" },
+  closedPositionHistory: { method: "GET", path: "/closed-position-history" },
   openOrders: { method: "GET", path: "/open-orders" },
   placeTestnetOrder: { method: "POST", path: "/testnet/orders" },
   closeTestnetPosition: { method: "POST", path: "/testnet/positions/close" },
+  closeAllTestnetPositions: { method: "POST", path: "/testnet/positions/close-all" },
   cancelTestnetOrder: { method: "POST", path: "/testnet/orders/cancel" },
 });
