@@ -35,4 +35,19 @@ export class BinanceAccountIpc extends IpcService implements WrapEnvelope<Binanc
   openOrders() {
     return toEnvelope("binanceAccount.openOrders", () => binanceAccountService.openOrders());
   }
+
+  @IpcMethod()
+  placeTestnetOrder(input: Parameters<BinanceAccountApi["placeTestnetOrder"]>[0]) {
+    return toEnvelope("binanceAccount.placeTestnetOrder", () => binanceAccountService.placeTestnetOrder(input));
+  }
+
+  @IpcMethod()
+  closeTestnetPosition(input: Parameters<BinanceAccountApi["closeTestnetPosition"]>[0]) {
+    return toEnvelope("binanceAccount.closeTestnetPosition", () => binanceAccountService.closeTestnetPosition(input));
+  }
+
+  @IpcMethod()
+  cancelTestnetOrder(input: Parameters<BinanceAccountApi["cancelTestnetOrder"]>[0]) {
+    return toEnvelope("binanceAccount.cancelTestnetOrder", () => binanceAccountService.cancelTestnetOrder(input));
+  }
 }

@@ -1,4 +1,4 @@
-# Binance Market Data Integration
+# Binance 集成
 
 本文档记录 Kansoku 的 Binance USD-M 扩展。后续 Binance、OKX、永续合约及相关 AI 改动应同步更新本文档与更新日志。
 
@@ -16,6 +16,15 @@
 - 前端：统一调用 `client.symbols.*`
 
 因此 Web 和 Electron 共享同一份 Binance 业务逻辑。
+
+账号与测试网订单共用另一组业务入口：
+
+- 账号与下单底层：`app/packages/core/src/services/marketdata/binanceAccount.ts`
+- 账号业务服务：`modules/binanceAccount/binanceAccount.service.ts`
+- Typed contract：`contract/binanceAccount.ts`
+- 前端设置页：`app/web/src/pages/settings/BinanceAccountCard.tsx`
+
+测试网手动下单同样同时覆盖 Web HTTP 和 Electron IPC。
 
 ## 支持范围
 
@@ -49,6 +58,24 @@ GET /api/symbols/BTCUSDT/derivatives
 
 Electron 使用等价的 `symbols.validate` 与 `symbols.derivatives` IPC。
 
+账号接口：
+
+```text
+GET  /api/binanceAccount/status
+GET  /api/binanceAccount/balance
+GET  /api/binanceAccount/positions
+GET  /api/binanceAccount/open-orders
+POST /api/binanceAccount/testnet/orders
+POST /api/binanceAccount/testnet/positions/close
+POST /api/binanceAccount/testnet/orders/cancel
+```
+
+三个写接口只接受人工确认后的测试网开仓、整仓市价平仓或撤单。开仓参数包括方向、初始保证金、杠杆倍数，以及可选的止盈价和止损价。服务端会再次检查当前凭证必须属于测试网；主网开仓和平仓不会仅靠页面隐藏，而是直接返回拒绝。
+
+测试网开仓固定使用市价单。服务端先读取标记价格和该合约的数量规则，再按“初始保证金 × 杠杆倍数 ÷ 标记价格”计算数量并向下取整。开仓成交后，可继续提交按标记价格触发、平掉整个仓位的止盈单和止损单。如果开仓已成功但保护单失败，接口会保留开仓结果并逐项返回失败原因，页面会用警告提示用户立即处理。
+
+设置页的开仓确认使用默认不勾选的复选框，不再要求输入文字。持仓列表提供“市价平仓”按钮；用户点击并确认后，服务端会重新读取当前实时持仓数量，而不是使用页面缓存的数量。单向持仓会带 `reduceOnly=true`，多空双向模式则指定对应的 `positionSide`，避免误开反向仓位。
+
 ## AI 与监控
 
 `ReassessPack.derivatives` 向 analyst 提供资金费率、OI、多空结构、盘口、成交和强平。Binance 的市场参照使用 BTCUSDT/ETHUSDT。已有分析且租约有效的 Binance 标的会在美股休市、夜间和周末继续接受 scheduler 巡检。
@@ -75,7 +102,10 @@ pnpm typecheck
 
 ## 已知限制
 
-- 不读取 Binance 账户，不下单。
+- Binance 账号支持读取余额、持仓和普通挂单；开仓只支持测试网人工确认的市价开仓。
+- 主网下单仍被服务端硬性禁止，也没有把 AI 预测接到自动下单。
+- 暂不支持测试网改单，也没有在挂单列表中统一展示或撤销条件止盈、止损单。
+- “初始保证金”用于按当前标记价格估算开仓数量；实际占用金额会因市价成交价格、数量取整和 Binance 风险规则产生小幅差异。
 - 暂未接入 COIN-M、现货、Options 与 OKX。
 - 强平历史未持久化。
 - TradFi 新闻、财报和 FRED 宏观数据尚未自动映射。
@@ -83,6 +113,18 @@ pnpm typecheck
 - 日内关键位和相对成交量仍有部分美股 session 假设。
 
 ## 更新日志
+
+### 2026-07-13
+
+- 设置页取消“完全不下单”的限制，新增测试网手动确认下单。
+- 测试网开仓表单新增开多/开空、初始保证金、1–125 倍杠杆、可选止盈价和止损价。
+- 开仓固定使用市价单；服务端自动读取标记价格与数量步进规则，计算并向下取整实际合约数量。
+- 开仓成功后通过 Binance 条件单接口提交止盈和止损；保护单失败时明确保留并返回已成交的开仓结果。
+- 开仓确认由输入“确认”改为勾选“我已核对以上参数”。
+- 测试网持仓列表新增整仓市价平仓；后端提交前重新读取持仓数量，并继续硬性禁止主网平仓。
+- 测试网挂单列表提供人工确认撤单。
+- 后端同时校验手动确认标记和测试网凭证，继续硬性禁止主网下单。
+- 账号密钥继续使用本机加密存储；测试网 key 需要开启期货交易权限。
 
 ### 2026-07-11
 

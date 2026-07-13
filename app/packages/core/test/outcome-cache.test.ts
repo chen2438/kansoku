@@ -14,7 +14,7 @@ describe("outcome cache", () => {
     await saveResolvedOutcome({ chartId: "c2", symbol: "MU.US", direction: "short" }, outcome("hit_stop", -2), db);
     const map = await getResolvedOutcomes(["c1", "c2", "c3"], db);
     expect(map.size).toBe(2);
-    expect(map.get("c1")).toEqual({ status: "hit_target", pct_since_anchor: 4.2, resolved_at: 1751400000 });
+    expect(map.get("c1")).toEqual({ status: "hit_target", pct_since_anchor: 4.2, resolved_at: 1751400000, entered: null });
     expect(map.get("c3")).toBeUndefined();
   });
 

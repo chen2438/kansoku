@@ -1,6 +1,11 @@
 import { Body, Controller, Delete, Get, Post } from "@tsuki-hono/common";
 import { binanceAccountService } from "../../../../packages/core/src/modules/binanceAccount/binanceAccount.service.js";
-import type { BinanceAccountConnectInput } from "../../../../packages/core/src/contract/binanceAccount.js";
+import type {
+  BinanceAccountConnectInput,
+  BinanceCancelTestnetOrderInput,
+  BinanceCloseTestnetPositionInput,
+  BinancePlaceTestnetOrderInput,
+} from "../../../../packages/core/src/contract/binanceAccount.js";
 
 @Controller("binanceAccount")
 export class BinanceAccountController {
@@ -32,5 +37,20 @@ export class BinanceAccountController {
   @Get("/open-orders")
   async getOpenOrders() {
     return { ok: true, data: await binanceAccountService.openOrders() };
+  }
+
+  @Post("/testnet/orders")
+  async postTestnetOrder(@Body() body: BinancePlaceTestnetOrderInput) {
+    return { ok: true, data: await binanceAccountService.placeTestnetOrder(body) };
+  }
+
+  @Post("/testnet/positions/close")
+  async postCloseTestnetPosition(@Body() body: BinanceCloseTestnetPositionInput) {
+    return { ok: true, data: await binanceAccountService.closeTestnetPosition(body) };
+  }
+
+  @Post("/testnet/orders/cancel")
+  async postCancelTestnetOrder(@Body() body: BinanceCancelTestnetOrderInput) {
+    return { ok: true, data: await binanceAccountService.cancelTestnetOrder(body) };
   }
 }

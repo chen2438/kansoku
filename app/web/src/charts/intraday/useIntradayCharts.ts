@@ -278,8 +278,6 @@ export function useIntradayCharts(
     const dc = built.sidebar.dayContext;
     if (toggles.daylevel && dc) {
       const dayLevels: { price: number | null | undefined; title: string }[] = [
-        { price: dc.pre_market?.high, title: "盘前高" },
-        { price: dc.pre_market?.low, title: "盘前低" },
         { price: dc.opening_range?.high, title: "开盘区高" },
         { price: dc.opening_range?.low, title: "开盘区低" },
       ];

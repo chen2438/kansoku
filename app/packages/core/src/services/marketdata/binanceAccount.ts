@@ -2,7 +2,13 @@ import { createHmac } from "node:crypto";
 import { ClientError } from "../../errors.js";
 import type {
   BinanceAccountBalance,
+  BinanceAlgoOrderResult,
+  BinanceCancelTestnetOrderInput,
+  BinanceCloseTestnetPositionInput,
   BinanceOpenOrderRow,
+  BinanceOpenedPositionResult,
+  BinancePlacedOrder,
+  BinancePlaceTestnetOrderInput,
   BinancePositionRow,
 } from "../../contract/binanceAccount.js";
 
@@ -32,13 +38,20 @@ export function signQuery(apiSecret: string, query: string): string {
 }
 
 // 只读签名 GET。签名 = HMAC-SHA256(查询串, apiSecret)，头带 X-MBX-APIKEY。
-async function signedGet<T>(creds: BinanceAccountCreds, path: string): Promise<T> {
-  const query = `timestamp=${Date.now()}&recvWindow=${RECV_WINDOW}`;
+async function signedGet<T>(
+  creds: BinanceAccountCreds,
+  path: string,
+  params = new URLSearchParams(),
+  fetchImpl: typeof fetch = fetch,
+): Promise<T> {
+  params.set("timestamp", String(Date.now()));
+  params.set("recvWindow", String(RECV_WINDOW));
+  const query = params.toString();
   const signature = signQuery(creds.apiSecret, query);
   const url = new URL(path, baseFor(creds));
   url.search = `${query}&signature=${signature}`;
   try {
-    const response = await fetch(url, {
+    const response = await fetchImpl(url, {
       method: "GET",
       headers: { "X-MBX-APIKEY": creds.apiKey },
       signal: AbortSignal.timeout(12_000),
@@ -57,6 +70,110 @@ async function signedGet<T>(creds: BinanceAccountCreds, path: string): Promise<T
     throw new ClientError(
       `binance account ${path} failed: ${error instanceof Error ? error.message : String(error)}`,
       "检查网络连通性与 Binance 期货接口可用性",
+      502,
+    );
+  }
+}
+
+async function publicGet<T>(
+  creds: BinanceAccountCreds,
+  path: string,
+  params: URLSearchParams,
+  fetchImpl: typeof fetch = fetch,
+): Promise<T> {
+  const url = new URL(path, baseFor(creds));
+  url.search = params.toString();
+  try {
+    const response = await fetchImpl(url, { method: "GET", signal: AbortSignal.timeout(12_000) });
+    if (!response.ok) {
+      throw new ClientError(
+        `binance account ${path} failed: ${response.status} ${await response.text()}`,
+        "检查交易对是否存在，以及 Binance 期货测试网是否可用",
+        502,
+      );
+    }
+    return (await response.json()) as T;
+  } catch (error) {
+    if (error instanceof ClientError) throw error;
+    throw new ClientError(
+      `binance account ${path} failed: ${error instanceof Error ? error.message : String(error)}`,
+      "检查网络连通性与 Binance 期货测试网接口可用性",
+      502,
+    );
+  }
+}
+
+// Binance 要求先对编码后的参数串签名，再把同一串参数作为表单发送。
+async function signedPost<T>(
+  creds: BinanceAccountCreds,
+  path: string,
+  params: URLSearchParams,
+  fetchImpl: typeof fetch = fetch,
+): Promise<T> {
+  params.set("timestamp", String(Date.now()));
+  params.set("recvWindow", String(RECV_WINDOW));
+  const query = params.toString();
+  const body = `${query}&signature=${signQuery(creds.apiSecret, query)}`;
+  try {
+    const response = await fetchImpl(new URL(path, baseFor(creds)), {
+      method: "POST",
+      headers: {
+        "X-MBX-APIKEY": creds.apiKey,
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      body,
+      signal: AbortSignal.timeout(12_000),
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      const hint =
+        response.status === 401
+          ? "API key/secret 无效，或测试网 API key 没有交易权限"
+          : "检查交易对、数量、价格精度、可用保证金和测试网 API 交易权限";
+      throw new ClientError(`binance account ${path} failed: ${response.status} ${text}`, hint, 502);
+    }
+    return (await response.json()) as T;
+  } catch (error) {
+    if (error instanceof ClientError) throw error;
+    throw new ClientError(
+      `binance account ${path} failed: ${error instanceof Error ? error.message : String(error)}`,
+      "检查网络连通性与 Binance 期货测试网接口可用性",
+      502,
+    );
+  }
+}
+
+async function signedDelete<T>(
+  creds: BinanceAccountCreds,
+  path: string,
+  params: URLSearchParams,
+  fetchImpl: typeof fetch = fetch,
+): Promise<T> {
+  params.set("timestamp", String(Date.now()));
+  params.set("recvWindow", String(RECV_WINDOW));
+  const query = params.toString();
+  const url = new URL(path, baseFor(creds));
+  url.search = `${query}&signature=${signQuery(creds.apiSecret, query)}`;
+  try {
+    const response = await fetchImpl(url, {
+      method: "DELETE",
+      headers: { "X-MBX-APIKEY": creds.apiKey },
+      signal: AbortSignal.timeout(12_000),
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new ClientError(
+        `binance account ${path} failed: ${response.status} ${text}`,
+        "检查订单是否仍在挂单、交易对和测试网 API 交易权限",
+        502,
+      );
+    }
+    return (await response.json()) as T;
+  } catch (error) {
+    if (error instanceof ClientError) throw error;
+    throw new ClientError(
+      `binance account ${path} failed: ${error instanceof Error ? error.message : String(error)}`,
+      "检查网络连通性与 Binance 期货测试网接口可用性",
       502,
     );
   }
@@ -100,6 +217,7 @@ interface RawPosition {
   unRealizedProfit: string;
   leverage: string;
   liquidationPrice: string;
+  positionSide?: string;
 }
 
 export async function binancePositions(creds: BinanceAccountCreds): Promise<BinancePositionRow[]> {
@@ -107,9 +225,14 @@ export async function binancePositions(creds: BinanceAccountCreds): Promise<Bina
   return (raw ?? [])
     .map((p) => {
       const amt = num(p.positionAmt);
+      const side = p.positionSide === "LONG"
+        ? ("long" as const)
+        : p.positionSide === "SHORT"
+          ? ("short" as const)
+          : amt > 0 ? ("long" as const) : amt < 0 ? ("short" as const) : ("flat" as const);
       return {
         symbol: p.symbol,
-        side: amt > 0 ? ("long" as const) : amt < 0 ? ("short" as const) : ("flat" as const),
+        side,
         positionAmt: amt,
         entryPrice: num(p.entryPrice),
         markPrice: num(p.markPrice),
@@ -148,4 +271,331 @@ export async function binanceOpenOrders(creds: BinanceAccountCreds): Promise<Bin
     reduceOnly: Boolean(o.reduceOnly),
     time: num(o.time),
   }));
+}
+
+interface RawPlacedOrder {
+  symbol?: string;
+  orderId?: number;
+  clientOrderId?: string;
+  side?: string;
+  type?: string;
+  status?: string;
+  origQty?: string;
+  executedQty?: string;
+  price?: string;
+  avgPrice?: string;
+  reduceOnly?: boolean;
+  updateTime?: number;
+}
+
+interface RawExchangeInfo {
+  symbols?: Array<{
+    symbol?: string;
+    filters?: Array<{
+      filterType?: string;
+      minQty?: string;
+      maxQty?: string;
+      stepSize?: string;
+      minPrice?: string;
+      maxPrice?: string;
+      tickSize?: string;
+      notional?: string;
+    }>;
+  }>;
+}
+
+interface RawAlgoOrder {
+  algoId?: number;
+  clientAlgoId?: string;
+  symbol?: string;
+  side?: string;
+  orderType?: string;
+  algoStatus?: string;
+  triggerPrice?: string;
+}
+
+function decimalPlaces(step: string): number {
+  const normalized = step.replace(/0+$/, "");
+  const dot = normalized.indexOf(".");
+  return dot === -1 ? 0 : normalized.length - dot - 1;
+}
+
+function floorToStep(value: number, step: number, stepText: string): string {
+  const places = decimalPlaces(stepText);
+  const units = Math.floor((value + Number.EPSILON) / step);
+  return (units * step).toFixed(places);
+}
+
+function isStepAligned(value: number, step: number): boolean {
+  const units = value / step;
+  return Math.abs(units - Math.round(units)) < 1e-8;
+}
+
+function placedOrder(raw: RawPlacedOrder, fallback: { symbol: string; side: string; quantity: number }): BinancePlacedOrder {
+  return {
+    symbol: String(raw.symbol ?? fallback.symbol),
+    orderId: num(raw.orderId),
+    clientOrderId: String(raw.clientOrderId ?? ""),
+    side: String(raw.side ?? fallback.side),
+    type: String(raw.type ?? "MARKET"),
+    status: String(raw.status ?? "UNKNOWN"),
+    quantity: num(raw.origQty ?? fallback.quantity),
+    executedQty: num(raw.executedQty),
+    price: num(raw.price),
+    avgPrice: num(raw.avgPrice),
+    reduceOnly: Boolean(raw.reduceOnly),
+    updateTime: num(raw.updateTime),
+  };
+}
+
+function algoOrder(raw: RawAlgoOrder, fallback: { symbol: string; side: string; type: string; triggerPrice: number }): BinanceAlgoOrderResult {
+  return {
+    algoId: num(raw.algoId),
+    clientAlgoId: String(raw.clientAlgoId ?? ""),
+    symbol: String(raw.symbol ?? fallback.symbol),
+    side: String(raw.side ?? fallback.side),
+    type: String(raw.orderType ?? fallback.type),
+    status: String(raw.algoStatus ?? "NEW"),
+    triggerPrice: num(raw.triggerPrice ?? fallback.triggerPrice),
+  };
+}
+
+export async function binancePlaceTestnetOrder(
+  creds: BinanceAccountCreds,
+  input: BinancePlaceTestnetOrderInput,
+  fetchImpl: typeof fetch = fetch,
+): Promise<BinanceOpenedPositionResult> {
+  if (!creds.testnet) {
+    throw new ClientError("主网下单已禁止", "请连接 Binance 期货测试网账号后再下单", 403, "BINANCE_MAINNET_ORDER_BLOCKED");
+  }
+  if (input?.confirmed !== true) {
+    throw new ClientError("订单尚未手动确认", "请先核对订单摘要并确认", 400, "BINANCE_ORDER_NOT_CONFIRMED");
+  }
+
+  const symbol = String(input.symbol ?? "").trim().toUpperCase();
+  if (!/^[A-Z0-9]{2,20}USDT$/.test(symbol)) {
+    throw new ClientError("交易对格式不正确", "请输入 Binance USD-M 的 USDT 永续合约，例如 BTCUSDT", 400);
+  }
+  if (input.direction !== "LONG" && input.direction !== "SHORT") {
+    throw new ClientError("开仓方向不正确", "请选择开多或开空", 400);
+  }
+  const initialMargin = Number(input.initialMargin);
+  if (!Number.isFinite(initialMargin) || initialMargin <= 0) {
+    throw new ClientError("初始保证金必须大于 0", "请输入计划投入的 USDT 金额", 400);
+  }
+  const leverage = Number(input.leverage);
+  if (!Number.isSafeInteger(leverage) || leverage < 1 || leverage > 125) {
+    throw new ClientError("杠杆倍数必须是 1 到 125 的整数", "请输入 Binance 允许的杠杆倍数", 400);
+  }
+  const takeProfitPrice = input.takeProfitPrice == null ? null : Number(input.takeProfitPrice);
+  const stopLossPrice = input.stopLossPrice == null ? null : Number(input.stopLossPrice);
+  if (takeProfitPrice !== null && (!Number.isFinite(takeProfitPrice) || takeProfitPrice <= 0)) {
+    throw new ClientError("止盈价格必须大于 0", "不需要止盈时请留空", 400);
+  }
+  if (stopLossPrice !== null && (!Number.isFinite(stopLossPrice) || stopLossPrice <= 0)) {
+    throw new ClientError("止损价格必须大于 0", "不需要止损时请留空", 400);
+  }
+
+  const [markRaw, exchangeInfo, positionMode] = await Promise.all([
+    publicGet<{ markPrice?: string }>(creds, "/fapi/v1/premiumIndex", new URLSearchParams({ symbol }), fetchImpl),
+    publicGet<RawExchangeInfo>(creds, "/fapi/v1/exchangeInfo", new URLSearchParams({ symbol }), fetchImpl),
+    signedGet<{ dualSidePosition?: boolean }>(creds, "/fapi/v1/positionSide/dual", new URLSearchParams(), fetchImpl),
+  ]);
+  const referencePrice = num(markRaw.markPrice);
+  if (referencePrice <= 0) throw new ClientError("无法取得标记价格", "稍后刷新重试", 502);
+  if (input.direction === "LONG" && takeProfitPrice !== null && takeProfitPrice <= referencePrice) {
+    throw new ClientError("开多的止盈价必须高于当前标记价格", `当前标记价格约为 ${referencePrice}`, 400);
+  }
+  if (input.direction === "LONG" && stopLossPrice !== null && stopLossPrice >= referencePrice) {
+    throw new ClientError("开多的止损价必须低于当前标记价格", `当前标记价格约为 ${referencePrice}`, 400);
+  }
+  if (input.direction === "SHORT" && takeProfitPrice !== null && takeProfitPrice >= referencePrice) {
+    throw new ClientError("开空的止盈价必须低于当前标记价格", `当前标记价格约为 ${referencePrice}`, 400);
+  }
+  if (input.direction === "SHORT" && stopLossPrice !== null && stopLossPrice <= referencePrice) {
+    throw new ClientError("开空的止损价必须高于当前标记价格", `当前标记价格约为 ${referencePrice}`, 400);
+  }
+
+  const symbolInfo = exchangeInfo.symbols?.find((item) => item.symbol === symbol);
+  const priceFilter = symbolInfo?.filters?.find((filter) => filter.filterType === "PRICE_FILTER");
+  const tickSize = num(priceFilter?.tickSize);
+  for (const [name, value] of [["止盈", takeProfitPrice], ["止损", stopLossPrice]] as const) {
+    if (value === null) continue;
+    if (tickSize > 0 && !isStepAligned(value, tickSize)) {
+      throw new ClientError(`${name}价格不符合该合约的价格精度`, `价格必须是 ${priceFilter?.tickSize} 的整数倍`, 400);
+    }
+    const minPrice = num(priceFilter?.minPrice);
+    const maxPrice = num(priceFilter?.maxPrice);
+    if ((minPrice > 0 && value < minPrice) || (maxPrice > 0 && value > maxPrice)) {
+      throw new ClientError(`${name}价格超出该合约允许范围`, `允许范围为 ${minPrice} 至 ${maxPrice}`, 400);
+    }
+  }
+  const lot = symbolInfo?.filters?.find((filter) => filter.filterType === "MARKET_LOT_SIZE")
+    ?? symbolInfo?.filters?.find((filter) => filter.filterType === "LOT_SIZE");
+  const stepText = String(lot?.stepSize ?? "");
+  const step = num(stepText);
+  if (!symbolInfo || step <= 0) throw new ClientError("无法取得合约数量规则", "确认交易对存在后重试", 400);
+  const quantityText = floorToStep((initialMargin * leverage) / referencePrice, step, stepText);
+  const quantity = num(quantityText);
+  const minQty = num(lot?.minQty);
+  const maxQty = num(lot?.maxQty);
+  if (quantity <= 0 || (minQty > 0 && quantity < minQty) || (maxQty > 0 && quantity > maxQty)) {
+    throw new ClientError("按保证金计算出的下单数量不符合合约限制", `当前计算数量 ${quantityText}，请提高保证金或调整杠杆`, 400);
+  }
+  const minNotional = num(symbolInfo.filters?.find((filter) => filter.filterType === "MIN_NOTIONAL")?.notional);
+  if (minNotional > 0 && quantity * referencePrice < minNotional) {
+    throw new ClientError("仓位金额低于最小下单金额", `至少需要约 ${minNotional} USDT 的仓位金额`, 400);
+  }
+
+  const leverageRaw = await signedPost<{ leverage?: number }>(
+    creds,
+    "/fapi/v1/leverage",
+    new URLSearchParams({ symbol, leverage: String(leverage) }),
+    fetchImpl,
+  );
+  const actualLeverage = num(leverageRaw.leverage) || leverage;
+  const entrySide = input.direction === "LONG" ? "BUY" : "SELL";
+  const closeSide = input.direction === "LONG" ? "SELL" : "BUY";
+  const positionSide = positionMode.dualSidePosition ? input.direction : null;
+  const entryParams = new URLSearchParams({
+    symbol,
+    side: entrySide,
+    type: "MARKET",
+    quantity: quantityText,
+    newOrderRespType: "RESULT",
+  });
+  if (positionSide) entryParams.set("positionSide", positionSide);
+  const entryRaw = await signedPost<RawPlacedOrder>(creds, "/fapi/v1/order", entryParams, fetchImpl);
+  const entryOrder = placedOrder(entryRaw, { symbol, side: entrySide, quantity });
+
+  const protectionErrors: string[] = [];
+  const placeProtection = async (type: "TAKE_PROFIT_MARKET" | "STOP_MARKET", triggerPrice: number) => {
+    const params = new URLSearchParams({
+      algoType: "CONDITIONAL",
+      symbol,
+      side: closeSide,
+      type,
+      triggerPrice: String(triggerPrice),
+      workingType: "MARK_PRICE",
+      closePosition: "true",
+    });
+    if (positionSide) params.set("positionSide", positionSide);
+    const raw = await signedPost<RawAlgoOrder>(creds, "/fapi/v1/algoOrder", params, fetchImpl);
+    return algoOrder(raw, { symbol, side: closeSide, type, triggerPrice });
+  };
+  let takeProfitOrder: BinanceAlgoOrderResult | null = null;
+  let stopLossOrder: BinanceAlgoOrderResult | null = null;
+  if (takeProfitPrice !== null) {
+    try { takeProfitOrder = await placeProtection("TAKE_PROFIT_MARKET", takeProfitPrice); }
+    catch (error) { protectionErrors.push(`止盈单失败：${error instanceof Error ? error.message : String(error)}`); }
+  }
+  if (stopLossPrice !== null) {
+    try { stopLossOrder = await placeProtection("STOP_MARKET", stopLossPrice); }
+    catch (error) { protectionErrors.push(`止损单失败：${error instanceof Error ? error.message : String(error)}`); }
+  }
+
+  const fillPrice = entryOrder.avgPrice > 0 ? entryOrder.avgPrice : referencePrice;
+  return {
+    direction: input.direction,
+    initialMargin,
+    leverage: actualLeverage,
+    referencePrice,
+    quantity,
+    estimatedInitialMargin: (quantity * fillPrice) / actualLeverage,
+    entryOrder,
+    takeProfitOrder,
+    stopLossOrder,
+    protectionErrors,
+  };
+}
+
+export async function binanceCloseTestnetPosition(
+  creds: BinanceAccountCreds,
+  input: BinanceCloseTestnetPositionInput,
+  fetchImpl: typeof fetch = fetch,
+): Promise<BinancePlacedOrder> {
+  if (!creds.testnet) {
+    throw new ClientError("主网平仓已禁止", "请连接 Binance 期货测试网账号后再操作", 403, "BINANCE_MAINNET_ORDER_BLOCKED");
+  }
+  if (input?.confirmed !== true) {
+    throw new ClientError("平仓尚未确认", "请先核对持仓并确认市价平仓", 400, "BINANCE_ORDER_NOT_CONFIRMED");
+  }
+  const symbol = String(input.symbol ?? "").trim().toUpperCase();
+  if (!/^[A-Z0-9]{2,20}USDT$/.test(symbol) || (input.direction !== "LONG" && input.direction !== "SHORT")) {
+    throw new ClientError("平仓参数不正确", "请刷新持仓列表后重试", 400);
+  }
+
+  // 不相信页面缓存的数量；提交前重新读取测试网当前持仓，按全部实时数量平仓。
+  const positions = await signedGet<RawPosition[]>(
+    creds,
+    "/fapi/v2/positionRisk",
+    new URLSearchParams({ symbol }),
+    fetchImpl,
+  );
+  const target = (positions ?? []).find((position) => {
+    if (position.symbol !== symbol || num(position.positionAmt) === 0) return false;
+    const direction = position.positionSide === "LONG" || position.positionSide === "SHORT"
+      ? position.positionSide
+      : num(position.positionAmt) > 0 ? "LONG" : "SHORT";
+    return direction === input.direction;
+  });
+  if (!target) {
+    throw new ClientError("找不到要平掉的测试网持仓", "持仓可能已经变化，请刷新后重试", 409);
+  }
+
+  const quantityText = String(target.positionAmt).replace(/^-/, "");
+  const side = input.direction === "LONG" ? "SELL" : "BUY";
+  const params = new URLSearchParams({
+    symbol,
+    side,
+    type: "MARKET",
+    quantity: quantityText,
+    newOrderRespType: "RESULT",
+  });
+  if (target.positionSide === "LONG" || target.positionSide === "SHORT") {
+    params.set("positionSide", target.positionSide);
+  } else {
+    params.set("reduceOnly", "true");
+  }
+  const raw = await signedPost<RawPlacedOrder>(creds, "/fapi/v1/order", params, fetchImpl);
+  return placedOrder(raw, { symbol, side, quantity: num(quantityText) });
+}
+
+export async function binanceCancelTestnetOrder(
+  creds: BinanceAccountCreds,
+  input: BinanceCancelTestnetOrderInput,
+  fetchImpl: typeof fetch = fetch,
+): Promise<BinancePlacedOrder> {
+  if (!creds.testnet) {
+    throw new ClientError("主网撤单已禁止", "请连接 Binance 期货测试网账号后再操作", 403, "BINANCE_MAINNET_ORDER_BLOCKED");
+  }
+  if (input?.confirmed !== true) {
+    throw new ClientError("撤单尚未手动确认", "请先核对订单并确认撤单", 400, "BINANCE_ORDER_NOT_CONFIRMED");
+  }
+  const symbol = String(input.symbol ?? "").trim().toUpperCase();
+  const orderId = Number(input.orderId);
+  if (!/^[A-Z0-9]{2,20}USDT$/.test(symbol) || !Number.isSafeInteger(orderId) || orderId <= 0) {
+    throw new ClientError("撤单参数不正确", "请刷新挂单列表后重试", 400);
+  }
+
+  const raw = await signedDelete<RawPlacedOrder>(
+    creds,
+    "/fapi/v1/order",
+    new URLSearchParams({ symbol, orderId: String(orderId) }),
+    fetchImpl,
+  );
+  return {
+    symbol: String(raw.symbol ?? symbol),
+    orderId: num(raw.orderId ?? orderId),
+    clientOrderId: String(raw.clientOrderId ?? ""),
+    side: String(raw.side ?? ""),
+    type: String(raw.type ?? ""),
+    status: String(raw.status ?? "CANCELED"),
+    quantity: num(raw.origQty),
+    executedQty: num(raw.executedQty),
+    price: num(raw.price),
+    avgPrice: num(raw.avgPrice),
+    reduceOnly: Boolean(raw.reduceOnly),
+    updateTime: num(raw.updateTime),
+  };
 }

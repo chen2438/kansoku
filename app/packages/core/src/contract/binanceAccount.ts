@@ -52,7 +52,68 @@ export interface BinanceOpenOrderRow {
   time: number;
 }
 
-// 只读账户接口。本阶段刻意不含任何下单/撤单方法——实盘执行（Phase B）另行设计+批准。
+export interface BinancePlaceTestnetOrderInput {
+  symbol: string;
+  direction: "LONG" | "SHORT";
+  initialMargin: number;
+  leverage: number;
+  takeProfitPrice?: number;
+  stopLossPrice?: number;
+  // 页面必须在用户看过订单摘要并确认后才传 true；服务端仍会再次校验测试网。
+  confirmed: boolean;
+}
+
+export interface BinancePlacedOrder {
+  symbol: string;
+  orderId: number;
+  clientOrderId: string;
+  side: string;
+  type: string;
+  status: string;
+  quantity: number;
+  executedQty: number;
+  price: number;
+  avgPrice: number;
+  reduceOnly: boolean;
+  updateTime: number;
+}
+
+export interface BinanceCancelTestnetOrderInput {
+  symbol: string;
+  orderId: number;
+  confirmed: boolean;
+}
+
+export interface BinanceCloseTestnetPositionInput {
+  symbol: string;
+  direction: "LONG" | "SHORT";
+  confirmed: boolean;
+}
+
+export interface BinanceAlgoOrderResult {
+  algoId: number;
+  clientAlgoId: string;
+  symbol: string;
+  side: string;
+  type: string;
+  status: string;
+  triggerPrice: number;
+}
+
+export interface BinanceOpenedPositionResult {
+  direction: "LONG" | "SHORT";
+  initialMargin: number;
+  leverage: number;
+  referencePrice: number;
+  quantity: number;
+  estimatedInitialMargin: number;
+  entryOrder: BinancePlacedOrder;
+  takeProfitOrder: BinanceAlgoOrderResult | null;
+  stopLossOrder: BinanceAlgoOrderResult | null;
+  protectionErrors: string[];
+}
+
+// 账户接口默认只读；唯一写操作是经过手动确认的测试网订单，主网下单在服务端硬性禁止。
 export interface BinanceAccountApi {
   status(): Promise<BinanceAccountStatus>;
   connect(input: BinanceAccountConnectInput): Promise<BinanceAccountStatus>;
@@ -60,6 +121,9 @@ export interface BinanceAccountApi {
   balance(): Promise<BinanceAccountBalance>;
   positions(): Promise<BinancePositionRow[]>;
   openOrders(): Promise<BinanceOpenOrderRow[]>;
+  placeTestnetOrder(input: BinancePlaceTestnetOrderInput): Promise<BinanceOpenedPositionResult>;
+  closeTestnetPosition(input: BinanceCloseTestnetPositionInput): Promise<BinancePlacedOrder>;
+  cancelTestnetOrder(input: BinanceCancelTestnetOrderInput): Promise<BinancePlacedOrder>;
 }
 
 export const binanceAccountRoutes = defineRoutes<BinanceAccountApi>("binanceAccount", {
@@ -69,4 +133,7 @@ export const binanceAccountRoutes = defineRoutes<BinanceAccountApi>("binanceAcco
   balance: { method: "GET", path: "/balance" },
   positions: { method: "GET", path: "/positions" },
   openOrders: { method: "GET", path: "/open-orders" },
+  placeTestnetOrder: { method: "POST", path: "/testnet/orders" },
+  closeTestnetPosition: { method: "POST", path: "/testnet/positions/close" },
+  cancelTestnetOrder: { method: "POST", path: "/testnet/orders/cancel" },
 });
